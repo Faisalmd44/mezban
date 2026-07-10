@@ -55,10 +55,7 @@ export default function Checkout() {
   const subtotal = cart.reduce((s, l) => s + l.price * l.quantity, 0);
   const validCoupon = coupons.find((c) => c.code === coupon.toUpperCase() && subtotal >= c.min_order);
   const discount = validCoupon ? Math.round((subtotal * validCoupon.discount_percent) / 100) : 0;
-  const loyaltyMax = Math.min(user?.loyalty_points || 0, Math.floor(subtotal * 0.1));
-  const loyaltyDiscount = useLoyalty ? loyaltyMax : 0;
-  const deliveryFee = subtotal >= 250 ? 0 : 30;
-  const total = Math.max(0, subtotal - discount - loyaltyDiscount + deliveryFee);
+  const total = Math.max(0, subtotal - discount + deliveryFee);
 
   const placeOrder = async () => {
     setError("");
@@ -82,7 +79,6 @@ export default function Checkout() {
         payment_method: payment,
         coupon_code: validCoupon?.code,
         notes,
-        use_loyalty: useLoyalty,
       });
       if (payment === "razorpay") {
         // Do NOT clear the cart yet -- payment must succeed first.
@@ -196,19 +192,6 @@ export default function Checkout() {
         </View>
         {validCoupon ? <Text style={styles.couponGood}>✓ {validCoupon.discount_percent}% off applied!</Text> : null}
 
-        {user && user.loyalty_points > 0 ? (
-          <Pressable testID="co-loyalty-toggle" onPress={() => setUseLoyalty(!useLoyalty)} style={styles.loyaltyRow}>
-            <Ionicons name="star" size={20} color={COLORS.gold} />
-            <View style={{ flex: 1 }}>
-              <Text style={styles.loyaltyTxt}>Use Loyalty Points</Text>
-              <Text style={styles.loyaltySub}>{user.loyalty_points} pts (use up to ₹{loyaltyMax})</Text>
-            </View>
-            <View style={[styles.toggle, useLoyalty && styles.toggleOn]}>
-              <View style={[styles.toggleDot, useLoyalty && styles.toggleDotOn]} />
-            </View>
-          </Pressable>
-        ) : null}
-
         <Text style={styles.section}>Payment Method</Text>
         <Pressable testID="pay-cod" onPress={() => setPayment("cod")} style={[styles.payRow, payment === "cod" && styles.payActive]}>
           <Ionicons name="cash" size={22} color={COLORS.success} />
@@ -245,7 +228,6 @@ export default function Checkout() {
         <View style={styles.totals}>
           <Row lbl="Subtotal" val={`₹${subtotal.toFixed(0)}`} />
           {discount > 0 ? <Row lbl={`Coupon (${validCoupon.code})`} val={`-₹${discount}`} good /> : null}
-          {loyaltyDiscount > 0 ? <Row lbl="Loyalty discount" val={`-₹${loyaltyDiscount}`} good /> : null}
           <Row lbl="Delivery fee" val={deliveryFee === 0 ? "FREE" : `₹${deliveryFee}`} good={deliveryFee === 0} />
           <View style={styles.divider} />
           <View style={styles.totalRow}>
@@ -350,9 +332,6 @@ const styles = StyleSheet.create({
   input: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", borderRadius: RADIUS.md, paddingHorizontal: SPACING.md, marginBottom: SPACING.sm, minHeight: 48, gap: 8 },
   txt: { flex: 1, color: COLORS.textPrimary, paddingVertical: SPACING.sm },
   couponGood: { color: COLORS.success, fontWeight: "700", marginTop: 4 },
-  loyaltyRow: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", borderRadius: RADIUS.md, padding: SPACING.md, marginTop: SPACING.md, gap: 12 },
-  loyaltyTxt: { fontWeight: "800", color: COLORS.textPrimary },
-  loyaltySub: { fontSize: 11, color: COLORS.textSecondary },
   toggle: { width: 44, height: 24, borderRadius: 12, backgroundColor: COLORS.border, padding: 2 },
   toggleOn: { backgroundColor: COLORS.brand },
   toggleDot: { width: 20, height: 20, borderRadius: 10, backgroundColor: "#fff" },
