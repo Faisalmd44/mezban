@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "frontend",
+    "name": "Mezbaan",
     "slug": "frontend",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "frontend",
+    "scheme": "mezbaan",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
@@ -40,6 +40,12 @@
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "8cc27d72-fb08-4be3-9aaa-83dde7a4ed80"
+      }
     }
   }
 }

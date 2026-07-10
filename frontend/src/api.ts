@@ -1,6 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const BASE = process.env.EXPO_PUBLIC_BACKEND_URL;
+console.log("BASE URL =", BASE);
 export const ADMIN_PASSCODE = "MEZBAAN2026";
 
 async function authHeader(): Promise<Record<string, string>> {
@@ -15,6 +16,9 @@ async function request(path: string, opts: RequestInit = {}, withAuth = true, ad
   };
   if (withAuth) Object.assign(headers, await authHeader());
   if (admin) headers["X-Admin-Passcode"] = ADMIN_PASSCODE;
+  
+  console.log("BASE URL =", BASE);
+  console.log("FETCH URL:", `${BASE}/api${path}`);
   const res = await fetch(`${BASE}/api${path}`, { ...opts, headers });
   if (!res.ok) {
     const text = await res.text();

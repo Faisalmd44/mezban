@@ -33,16 +33,18 @@ export default function LoginScreen() {
     if (phone.trim().length < 10) return setError("Valid 10-digit phone enter करें");
     setLoading(true);
     try {
-      const res = await api.signup(name.trim(), phone.trim());
-      await saveToken(res.token);
-      setUser(res.user);
-      router.replace("/(tabs)");
-    } catch (e: any) {
-      setError(e.message || "Login failed");
-    } finally {
-      setLoading(false);
-    }
-  };
+  const res = await api.signup(name.trim(), phone.trim());
+  await saveToken(res.token);
+  setUser(res.user);
+  router.replace("/(tabs)");
+} catch (e: any) {
+  console.log("LOGIN ERROR:", e);
+  console.log("MESSAGE:", e?.message);
+  setError(e?.message || "Login failed");
+} finally {
+  setLoading(false);
+}
+};
 
   return (
     <View style={styles.root}>

@@ -56,12 +56,50 @@ export default function ProfileTab() {
 
       <Text style={styles.sectionTitle}>Account</Text>
 
-      <MenuRow icon="receipt-outline" label="Order History" onPress={() => router.push("/(tabs)/orders")} testID="row-orders" />
-      <MenuRow icon="heart-outline" label="Wishlist" onPress={() => router.push("/wishlist")} testID="row-wishlist" />
-      <MenuRow icon="pricetags-outline" label="Offers & Coupons" onPress={() => router.push("/offers")} testID="row-offers" />
-      <MenuRow icon="logo-whatsapp" label="WhatsApp Support" onPress={whatsapp} testID="row-whatsapp" />
-      <MenuRow icon="shield-checkmark-outline" label="Admin Panel" onPress={() => router.push("/admin")} testID="row-admin" />
-      <MenuRow icon="log-out-outline" label="Logout" onPress={logout} testID="row-logout" danger />
+      <MenuRow
+  icon="receipt-outline"
+  label="Order History"
+  onPress={() => router.push("/(tabs)/orders")}
+  testID="row-orders"
+/>
+
+<MenuRow
+  icon="heart-outline"
+  label="Wishlist"
+  onPress={() => router.push("/wishlist")}
+  testID="row-wishlist"
+/>
+
+<MenuRow
+  icon="pricetags-outline"
+  label="Offers & Coupons"
+  onPress={() => router.push("/offers")}
+  testID="row-offers"
+/>
+
+<MenuRow
+  icon="logo-whatsapp"
+  label="WhatsApp Support"
+  onPress={whatsapp}
+  testID="row-whatsapp"
+/>
+
+{user?.is_admin && (
+  <MenuRow
+    icon="shield-checkmark-outline"
+    label="Admin Panel"
+    onPress={() => router.push("/admin")}
+    testID="row-admin"
+  />
+)}
+
+<MenuRow
+  icon="log-out-outline"
+  label="Logout"
+  onPress={logout}
+  danger
+  testID="row-logout"
+/>
 
       <View style={styles.footer}>
         <Text style={styles.brand}>MEZBAAN RESTRO</Text>
