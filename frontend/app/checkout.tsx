@@ -268,28 +268,6 @@ export default function Checkout() {
         </Pressable>
       </View>
 
-      {/* UPI Modal */}
-      <Modal visible={showUpi} transparent animationType="slide" onRequestClose={() => setShowUpi(false)}>
-        <View style={styles.modalBg}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Scan to Pay</Text>
-            <View style={styles.qr}>
-              <Ionicons name="qr-code" size={140} color={COLORS.black} />
-            </View>
-            <Text style={styles.upiId}>UPI ID: mezbaan@upi</Text>
-            <Text style={styles.amount}>Amount: ₹{total.toFixed(0)}</Text>
-            <View style={{ flexDirection: "row", gap: 8, marginTop: SPACING.lg }}>
-              <Pressable onPress={() => setShowUpi(false)} style={[styles.modalBtn, { backgroundColor: COLORS.surfaceAlt }]}>
-                <Text style={{ fontWeight: "800", color: COLORS.textPrimary }}>Cancel</Text>
-              </Pressable>
-              <Pressable testID="upi-confirm" onPress={submit} style={[styles.modalBtn, { backgroundColor: COLORS.brand }]}>
-                {placing ? <ActivityIndicator color="#fff" /> : <Text style={{ color: "#fff", fontWeight: "800" }}>I Have Paid</Text>}
-              </Pressable>
-            </View>
-          </View>
-        </View>
-      </Modal>
-
       {/* Coupons Modal */}
       <Modal visible={showCoupons} transparent animationType="slide" onRequestClose={() => setShowCoupons(false)}>
         <View style={styles.modalBg}>
