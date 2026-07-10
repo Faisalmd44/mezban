@@ -8,12 +8,16 @@ from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
+import hmac
+import hashlib
 import logging
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
+
+import razorpay
 
 
 ROOT_DIR = Path(__file__).parent
@@ -31,6 +35,19 @@ FREE_DELIVERY_THRESHOLD = 250
 DELIVERY_FEE = 30
 
 STATUS_FLOW = ["received", "preparing", "packed", "out_for_delivery", "delivered"]
+
+# ----- Razorpay client (lazy) -----
+RAZORPAY_KEY_ID = os.environ.get("RAZORPAY_KEY_ID", "")
+RAZORPAY_KEY_SECRET = os.environ.get("RAZORPAY_KEY_SECRET", "")
+
+
+def get_razorpay_client() -> razorpay.Client:
+    if not RAZORPAY_KEY_ID or not RAZORPAY_KEY_SECRET:
+        raise HTTPException(
+            status_code=503,
+            detail="Razorpay is not configured. Set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET.",
+        )
+    return razorpay.Client(auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET))
 
 
 # ----- Models -----
@@ -96,10 +113,17 @@ class PlaceOrderRequest(BaseModel):
     address: str
     phone: str
     name: str
-    payment_method: str  # "cod" | "upi"
+    payment_method: str  # "cod" | "upi" | "razorpay"
     coupon_code: Optional[str] = None
     notes: Optional[str] = None
     use_loyalty: bool = False
+
+
+class RazorpayVerifyRequest(BaseModel):
+    order_id: str  # our internal Mezbaan order id
+    razorpay_order_id: str
+    razorpay_payment_id: str
+    razorpay_signature: str
 
 
 class OrderStatusUpdate(BaseModel):
@@ -356,6 +380,9 @@ async def place_order(req: PlaceOrderRequest, current_user: dict = Depends(get_c
     if not req.items:
         raise HTTPException(status_code=400, detail="Cart is empty")
 
+    if req.payment_method not in ("cod", "upi", "razorpay"):
+        raise HTTPException(status_code=400, detail="Invalid payment method")
+
     coupon = None
     if req.coupon_code:
         coupon = await db.coupons.find_one({"code": req.coupon_code.upper(), "active": True}, {"_id": 0})
@@ -368,6 +395,37 @@ async def place_order(req: PlaceOrderRequest, current_user: dict = Depends(get_c
 
     order_id = str(uuid.uuid4())
     order_no = f"MZB{int(datetime.now().timestamp())}"
+
+    # Payment status:
+    #   cod           -> "cod_pending" (settled on delivery)
+    #   upi (manual)  -> "pending"     (existing manual UPI QR flow)
+    #   razorpay      -> "pending" until signature verified
+    payment_status = "cod_pending" if req.payment_method == "cod" else "pending"
+
+    razorpay_order_id: Optional[str] = None
+    if req.payment_method == "razorpay":
+        # Amount in paise (Razorpay uses smallest currency unit)
+        amount_paise = int(round(totals["total"] * 100))
+        if amount_paise <= 0:
+            raise HTTPException(status_code=400, detail="Order total must be greater than zero")
+        rzp = get_razorpay_client()
+        try:
+            rzp_order = rzp.order.create({
+                "amount": amount_paise,
+                "currency": "INR",
+                # receipt must be <= 40 chars
+                "receipt": order_no[:40],
+                "payment_capture": 1,
+                "notes": {
+                    "mezbaan_order_id": order_id,
+                    "user_id": current_user["id"],
+                },
+            })
+        except Exception as e:
+            logger.exception("Razorpay order creation failed")
+            raise HTTPException(status_code=502, detail=f"Payment gateway error: {str(e)}")
+        razorpay_order_id = rzp_order["id"]
+
     order = {
         "id": order_id,
         "order_no": order_no,
@@ -377,6 +435,10 @@ async def place_order(req: PlaceOrderRequest, current_user: dict = Depends(get_c
         "address": req.address,
         "items": [i.dict() for i in req.items],
         "payment_method": req.payment_method,
+        "payment_status": payment_status,
+        "razorpay_order_id": razorpay_order_id,
+        "razorpay_payment_id": None,
+        "razorpay_signature": None,
         "coupon_code": req.coupon_code,
         "notes": req.notes,
         **totals,
@@ -387,12 +449,105 @@ async def place_order(req: PlaceOrderRequest, current_user: dict = Depends(get_c
     }
     await db.orders.insert_one(dict(order))
 
-    # update user loyalty
-    new_points = current_user.get("loyalty_points", 0) - totals["loyalty_discount"] + earned_points
-    await db.users.update_one({"id": current_user["id"]}, {"$set": {"loyalty_points": new_points}})
+    # For COD / manual UPI, update loyalty immediately (existing behavior).
+    # For Razorpay, defer loyalty update until payment is verified.
+    if req.payment_method != "razorpay":
+        new_points = current_user.get("loyalty_points", 0) - totals["loyalty_discount"] + earned_points
+        await db.users.update_one({"id": current_user["id"]}, {"$set": {"loyalty_points": new_points}})
 
     order.pop("_id", None)
+    if razorpay_order_id:
+        order["razorpay_key_id"] = RAZORPAY_KEY_ID  # public key needed by frontend Checkout
     return order
+
+
+# ---- Razorpay ----
+@api.post("/payments/razorpay/verify")
+async def verify_razorpay_payment(
+    payload: RazorpayVerifyRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    order = await db.orders.find_one({"id": payload.order_id}, {"_id": 0})
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    if order.get("user_id") != current_user["id"]:
+        raise HTTPException(status_code=403, detail="Not your order")
+    if order.get("payment_method") != "razorpay":
+        raise HTTPException(status_code=400, detail="Order is not a Razorpay order")
+    if order.get("razorpay_order_id") != payload.razorpay_order_id:
+        raise HTTPException(status_code=400, detail="Razorpay order id mismatch")
+
+    if not RAZORPAY_KEY_SECRET:
+        raise HTTPException(status_code=503, detail="Razorpay not configured on server")
+
+    # Verify HMAC-SHA256 signature:  key_secret against "{razorpay_order_id}|{razorpay_payment_id}"
+    expected = hmac.new(
+        RAZORPAY_KEY_SECRET.encode("utf-8"),
+        f"{payload.razorpay_order_id}|{payload.razorpay_payment_id}".encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+
+    if not hmac.compare_digest(expected, payload.razorpay_signature):
+        await db.orders.update_one(
+            {"id": order["id"]},
+            {"$set": {
+                "payment_status": "failed",
+                "razorpay_payment_id": payload.razorpay_payment_id,
+                "razorpay_signature": payload.razorpay_signature,
+            }},
+        )
+        raise HTTPException(status_code=400, detail="Invalid payment signature")
+
+    # Signature is valid -> mark paid and apply loyalty updates.
+    await db.orders.update_one(
+        {"id": order["id"]},
+        {"$set": {
+            "payment_status": "paid",
+            "razorpay_payment_id": payload.razorpay_payment_id,
+            "razorpay_signature": payload.razorpay_signature,
+            "paid_at": now_iso(),
+        }},
+    )
+
+    new_points = (
+        current_user.get("loyalty_points", 0)
+        - int(order.get("loyalty_discount", 0))
+        + int(order.get("earned_points", 0))
+    )
+    await db.users.update_one({"id": current_user["id"]}, {"$set": {"loyalty_points": new_points}})
+
+    updated = await db.orders.find_one({"id": order["id"]}, {"_id": 0})
+    return {"success": True, "order": updated}
+
+
+@api.post("/payments/razorpay/cancel")
+async def cancel_razorpay_payment(
+    payload: Dict[str, Any],
+    current_user: dict = Depends(get_current_user),
+):
+    """Mark a pending Razorpay order as cancelled when user aborts checkout."""
+    order_id = payload.get("order_id")
+    if not order_id:
+        raise HTTPException(status_code=400, detail="order_id required")
+    order = await db.orders.find_one({"id": order_id}, {"_id": 0})
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    if order.get("user_id") != current_user["id"]:
+        raise HTTPException(status_code=403, detail="Not your order")
+    if order.get("payment_status") == "paid":
+        return {"success": True, "already_paid": True}
+
+    await db.orders.update_one(
+        {"id": order_id},
+        {"$set": {"payment_status": "cancelled", "status": "cancelled"}},
+    )
+    return {"success": True}
+
+
+@api.get("/payments/razorpay/config")
+async def razorpay_config():
+    """Expose the public key id so the frontend can render Razorpay Checkout."""
+    return {"key_id": RAZORPAY_KEY_ID, "configured": bool(RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET)}
 
 
 @api.get("/orders")

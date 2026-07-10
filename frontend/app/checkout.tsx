@@ -11,6 +11,7 @@ import * as Haptics from "expo-haptics";
 import { COLORS, SPACING, RADIUS, SHADOW } from "@/src/theme";
 import { api } from "@/src/api";
 import { useApp } from "@/src/store";
+import RazorpayWebView, { RazorpaySuccessPayload } from "@/src/components/RazorpayWebView";
 
 export default function Checkout() {
   const insets = useSafeAreaInsets();
@@ -21,7 +22,7 @@ export default function Checkout() {
   const [phone, setPhone] = useState(user?.phone || "");
   const [name, setName] = useState(user?.name || "");
   const [notes, setNotes] = useState("");
-  const [payment, setPayment] = useState<"cod" | "upi">("cod");
+  const [payment, setPayment] = useState<"cod" | "upi" | "razorpay">("cod");
   const [coupon, setCoupon] = useState("");
   const [coupons, setCoupons] = useState<any[]>([]);
   const [useLoyalty, setUseLoyalty] = useState(false);
@@ -30,7 +31,26 @@ export default function Checkout() {
   const [showUpi, setShowUpi] = useState(false);
   const [showCoupons, setShowCoupons] = useState(false);
 
+  // Razorpay
+  const [razorpayConfigured, setRazorpayConfigured] = useState(false);
+  const [razorpayKeyId, setRazorpayKeyId] = useState("");
+  const [rzpOrder, setRzpOrder] = useState<{
+    order_id: string;
+    razorpay_order_id: string;
+    amount: number;
+  } | null>(null);
+  const [showRzp, setShowRzp] = useState(false);
+  const [verifying, setVerifying] = useState(false);
+
   useEffect(() => { api.coupons().then(setCoupons); }, []);
+  useEffect(() => {
+    api.razorpayConfig()
+      .then((r: any) => {
+        setRazorpayConfigured(!!r?.configured);
+        setRazorpayKeyId(r?.key_id || "");
+      })
+      .catch(() => setRazorpayConfigured(false));
+  }, []);
 
   const subtotal = cart.reduce((s, l) => s + l.price * l.quantity, 0);
   const validCoupon = coupons.find((c) => c.code === coupon.toUpperCase() && subtotal >= c.min_order);
@@ -64,6 +84,16 @@ export default function Checkout() {
         notes,
         use_loyalty: useLoyalty,
       });
+      if (payment === "razorpay") {
+        // Do NOT clear the cart yet -- payment must succeed first.
+        setRzpOrder({
+          order_id: res.id,
+          razorpay_order_id: res.razorpay_order_id,
+          amount: Math.round(res.total * 100),
+        });
+        setShowRzp(true);
+        return;
+      }
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       clearCart();
       refreshUser();
@@ -74,6 +104,47 @@ export default function Checkout() {
     } finally {
       setPlacing(false);
     }
+  };
+
+  const onRazorpaySuccess = async (payload: RazorpaySuccessPayload) => {
+    if (!rzpOrder) return;
+    setVerifying(true);
+    try {
+      const verifyRes = await api.verifyRazorpay({
+        order_id: rzpOrder.order_id,
+        razorpay_order_id: payload.razorpay_order_id,
+        razorpay_payment_id: payload.razorpay_payment_id,
+        razorpay_signature: payload.razorpay_signature,
+      });
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+      clearCart();
+      refreshUser();
+      setShowRzp(false);
+      setRzpOrder(null);
+      router.replace(`/tracking/${verifyRes.order.id}`);
+    } catch (e: any) {
+      setError(e.message || "Payment verification failed");
+      setShowRzp(false);
+    } finally {
+      setVerifying(false);
+    }
+  };
+
+  const onRazorpayFailure = async (msg: string) => {
+    setError(msg || "Payment failed. Please try again.");
+    if (rzpOrder) {
+      try { await api.cancelRazorpay(rzpOrder.order_id); } catch {}
+    }
+    setShowRzp(false);
+    setRzpOrder(null);
+  };
+
+  const onRazorpayDismiss = async () => {
+    if (rzpOrder) {
+      try { await api.cancelRazorpay(rzpOrder.order_id); } catch {}
+    }
+    setShowRzp(false);
+    setRzpOrder(null);
   };
 
   return (
@@ -148,6 +219,27 @@ export default function Checkout() {
           <Ionicons name="qr-code" size={22} color={COLORS.brand} />
           <Text style={styles.payLbl}>UPI QR Code</Text>
           {payment === "upi" ? <Ionicons name="checkmark-circle" size={20} color={COLORS.brand} /> : null}
+        </Pressable>
+        <Pressable
+          testID="pay-razorpay"
+          onPress={() => {
+            if (!razorpayConfigured) {
+              setError("Online payment is not available right now. Please choose COD or UPI.");
+              return;
+            }
+            setError("");
+            setPayment("razorpay");
+          }}
+          style={[styles.payRow, payment === "razorpay" && styles.payActive, !razorpayConfigured && { opacity: 0.55 }]}
+        >
+          <Ionicons name="card" size={22} color={COLORS.brand} />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.payLbl}>Pay Online (Razorpay)</Text>
+            <Text style={styles.paySub}>
+              {razorpayConfigured ? "Cards, UPI, Netbanking, Wallets" : "Unavailable — key not configured"}
+            </Text>
+          </View>
+          {payment === "razorpay" ? <Ionicons name="checkmark-circle" size={20} color={COLORS.brand} /> : null}
         </Pressable>
 
         <View style={styles.totals}>
@@ -227,6 +319,37 @@ export default function Checkout() {
           </View>
         </View>
       </Modal>
+      {/* Razorpay Checkout Modal */}
+      <Modal
+        visible={showRzp}
+        transparent={false}
+        animationType="slide"
+        onRequestClose={onRazorpayDismiss}
+      >
+        {rzpOrder && razorpayKeyId ? (
+          <View style={{ flex: 1 }}>
+            <RazorpayWebView
+              keyId={razorpayKeyId}
+              razorpayOrderId={rzpOrder.razorpay_order_id}
+              amount={rzpOrder.amount}
+              name="Mezbaan Restro"
+              description={`Order ${rzpOrder.order_id.slice(0, 8)}`}
+              prefill={{ name, contact: phone, email: "" }}
+              onSuccess={onRazorpaySuccess}
+              onFailure={onRazorpayFailure}
+              onDismiss={onRazorpayDismiss}
+            />
+            {verifying ? (
+              <View style={styles.verifyOverlay} testID="razorpay-verifying">
+                <ActivityIndicator size="large" color="#fff" />
+                <Text style={{ color: "#fff", marginTop: 12, fontWeight: "700" }}>
+                  Verifying payment…
+                </Text>
+              </View>
+            ) : null}
+          </View>
+        ) : null}
+      </Modal>
     </KeyboardAvoidingView>
   );
 }
@@ -259,6 +382,7 @@ const styles = StyleSheet.create({
   payRow: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", borderRadius: RADIUS.md, padding: SPACING.md, marginBottom: SPACING.sm, gap: 12, borderWidth: 1.5, borderColor: "transparent" },
   payActive: { borderColor: COLORS.brand, backgroundColor: COLORS.surfaceTint },
   payLbl: { flex: 1, fontWeight: "700", color: COLORS.textPrimary },
+  paySub: { fontSize: 11, color: COLORS.textSecondary, marginTop: 2 },
   totals: { backgroundColor: "#fff", borderRadius: RADIUS.md, padding: SPACING.md, marginTop: SPACING.lg },
   totRow: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 4 },
   totLbl: { color: COLORS.textSecondary },
@@ -286,4 +410,11 @@ const styles = StyleSheet.create({
   couponCode: { fontWeight: "900", color: COLORS.textPrimary },
   couponDesc: { color: COLORS.textSecondary, fontSize: 12, marginTop: 2 },
   couponMin: { color: COLORS.textMuted, fontSize: 11, marginTop: 2 },
+  verifyOverlay: {
+    position: "absolute",
+    top: 0, bottom: 0, left: 0, right: 0,
+    backgroundColor: "rgba(0,0,0,0.7)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
 });

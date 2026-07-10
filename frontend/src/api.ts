@@ -45,6 +45,16 @@ export const api = {
     request("/orders", { method: "POST", body: JSON.stringify(payload) }),
   myOrders: () => request("/orders"),
   order: (id: string) => request(`/orders/${id}`),
+  // Razorpay
+  razorpayConfig: () => request("/payments/razorpay/config", {}, false),
+  verifyRazorpay: (payload: {
+    order_id: string;
+    razorpay_order_id: string;
+    razorpay_payment_id: string;
+    razorpay_signature: string;
+  }) => request("/payments/razorpay/verify", { method: "POST", body: JSON.stringify(payload) }),
+  cancelRazorpay: (order_id: string) =>
+    request("/payments/razorpay/cancel", { method: "POST", body: JSON.stringify({ order_id }) }),
   // admin
   adminOrders: () => request("/admin/orders", {}, false, true),
   adminUpdateStatus: (id: string, status: string) =>
