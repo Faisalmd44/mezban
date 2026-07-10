@@ -32,7 +32,7 @@ export default function ProfileTab() {
       </LinearGradient>
 
       <View style={styles.statsRow}>
-        <View style={[styles.statCard, { backgroundColor: COLORS.gold }]}>
+        <View style={[styles.statCard, { backgroundColor: COLORS.gold, width: "100%", }]}>
           <Ionicons name="wallet" size={24} color={COLORS.black} />
           <Text style={styles.statLbl}>Wallet</Text>
           <Text style={styles.statVal}>₹{user?.wallet?.toFixed(0) || "0"}</Text>
@@ -115,8 +115,8 @@ const styles = StyleSheet.create({
   avatarTxt: { fontSize: 32, fontWeight: "900", color: COLORS.black },
   name: { color: "#fff", fontSize: 22, fontWeight: "900" },
   phone: { color: "rgba(255,255,255,0.85)", marginTop: 2 },
-  statsRow: { flexDirection: "row", paddingHorizontal: SPACING.lg, marginTop: -24, gap: SPACING.md },
-  statCard: { flex: 1, borderRadius: RADIUS.lg, padding: SPACING.md, ...SHADOW.card },
+  statsRow: { paddingHorizontal:SPACING.lg, marginTop: -24 },
+  statCard: { width: "100%", borderRadius: RADIUS.lg, padding: SPACING.md, ...SHADOW.card },
   statLbl: { fontWeight: "700", fontSize: 12, marginTop: 6, color: COLORS.black },
   statVal: { fontWeight: "900", fontSize: 22, marginTop: 2, color: COLORS.black },
   referralCard: {
