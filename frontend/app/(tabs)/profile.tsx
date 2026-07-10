@@ -37,21 +37,6 @@ export default function ProfileTab() {
           <Text style={styles.statLbl}>Wallet</Text>
           <Text style={styles.statVal}>₹{user?.wallet?.toFixed(0) || "0"}</Text>
         </View>
-        <View style={[styles.statCard, { backgroundColor: COLORS.black }]}>
-          <Ionicons name="star" size={24} color={COLORS.gold} />
-          <Text style={[styles.statLbl, { color: "#fff" }]}>Loyalty Points</Text>
-          <Text style={[styles.statVal, { color: COLORS.gold }]}>{user?.loyalty_points || 0}</Text>
-        </View>
-      </View>
-
-      <View style={styles.referralCard}>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.refTitle}>🎁 Refer & Earn</Text>
-          <Text style={styles.refSub}>Share your code and earn ₹50 per referral</Text>
-          <View style={styles.refCode}>
-            <Text testID="referral-code" style={styles.refCodeTxt}>{user?.referral_code || "—"}</Text>
-          </View>
-        </View>
       </View>
 
       <Text style={styles.sectionTitle}>Account</Text>
