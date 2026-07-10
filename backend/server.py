@@ -122,6 +122,7 @@ async def get_current_user(authorization: Optional[str] = Header(None)) -> Dict[
     user = await db.users.find_one({"id": token}, {"_id": 0})
     if not user:
         raise HTTPException(status_code=401, detail="Invalid token")
+    print("AUTH USER:", user)
     return user
 
 
