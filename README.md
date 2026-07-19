@@ -17,22 +17,27 @@ cd frontend
 yarn install
 yarn start   # opens Expo, scan QR from Expo Go
 ```
-The backend auto-seeds 23 menu items + 3 coupons on first startup.
+The backend auto-seeds 23 menu items + 1 coupon (WELCOME15) on first startup.
 
 ## Env variables
 See `.env.example`. Populate `backend/.env` and `frontend/.env`.
 
 ## Admin
 - Open Profile tab → Admin Panel (in the app)
-- All admin write APIs require header `X-Admin-Passcode: MEZBAAN2026`
+- Admin access is restricted to Google accounts in `ADMIN_EMAILS` (backend config)
+- All admin APIs return 403 for unauthorized emails
+
+## Authentication
+- Google Sign-In (expo-auth-session)
+- Mobile number required on first login before ordering
+- Secure JWT tokens (30-day expiry)
+
+## Welcome Offer
+- WELCOME15: 15% off, min order ₹299, first order only
+- One per Google account + per device
 
 ## Publishing an Android APK
-This project runs on **Emergent Cloud**. To generate a production APK / IPA and to deploy the backend, use the **Publish** button in the top-right of the Emergent editor. It handles:
-- Backend deploy (with your MONGO_URL provisioning)
-- Android APK / iOS IPA build via EAS
-
-## Downloading the source
-Use the platform's **Save to GitHub** action, or the built-in project download from Emergent to get the full ZIP. `/app` is the project root.
+A GitHub Actions workflow (`.github/workflows/android-apk.yml`) builds a debug APK on push to `main`. Download the artifact from the Actions tab.
 
 ## Deferred integrations
 Razorpay, real OTP auth, Google Maps live tracking, delivery-partner app, and push notifications are hooks-ready but not wired in this MVP. Add credentials and swap the placeholders in `checkout.tsx` + `tracking/[id].tsx` when ready.
