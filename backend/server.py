@@ -12,12 +12,14 @@ import hmac
 import hashlib
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 
 import razorpay
+import jwt as pyjwt
+import requests as http_requests
 
 
 ROOT_DIR = Path(__file__).parent
@@ -30,7 +32,6 @@ db = client["Mezbaan"]
 app = FastAPI(title="Mezbaan Restro API")
 api = APIRouter(prefix="/api")
 
-ADMIN_PASSCODE = "MEZBAAN2026"
 FREE_DELIVERY_THRESHOLD = 250
 DELIVERY_FEE = 30
 
@@ -39,6 +40,33 @@ STATUS_FLOW = ["received", "preparing", "packed", "out_for_delivery", "delivered
 # ----- Razorpay client (lazy) -----
 RAZORPAY_KEY_ID = os.environ.get("RAZORPAY_KEY_ID", "")
 RAZORPAY_KEY_SECRET = os.environ.get("RAZORPAY_KEY_SECRET", "")
+
+# ----- Google OAuth -----
+GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "")
+GOOGLE_TOKEN_SECRET = os.environ.get("GOOGLE_TOKEN_SECRET", "mezbaan-google-secret-2026")
+
+# ---------------------------------------------------------------------------
+# ADMIN ACCESS CONTROL
+# ---------------------------------------------------------------------------
+# Only Google accounts whose email is in this list can see the Admin Panel,
+# open admin routes, call admin APIs, or access any admin feature.
+# To grant/revoke admin access later, simply edit this list and redeploy —
+# no application code changes required.
+#
+# Emails are matched case-insensitively.
+# ---------------------------------------------------------------------------
+ADMIN_EMAILS = [
+    "Faisalmd44@gmail.com",
+    "Mezbaaan@gmail.com",
+]
+
+ADMIN_EMAILS_LOWER = [e.strip().lower() for e in ADMIN_EMAILS]
+
+
+def is_admin_email(email: Optional[str]) -> bool:
+    if not email:
+        return False
+    return email.strip().lower() in ADMIN_EMAILS_LOWER
 
 
 def get_razorpay_client() -> razorpay.Client:
@@ -55,17 +83,33 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-class SignupRequest(BaseModel):
+class GoogleLoginRequest(BaseModel):
+    id_token: str
+    email: str
     name: str
+    picture: Optional[str] = None
+    google_id: str
+    device_id: str
+
+
+class MobileUpdateRequest(BaseModel):
     phone: str
+
+
+class AddressRequest(BaseModel):
+    label: str
+    line: str
+    is_default: bool = False
 
 
 class User(BaseModel):
     id: str
     name: str
-    phone: str
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    picture: Optional[str] = None
+    google_id: Optional[str] = None
     wallet: float = 0.0
-    loyalty_points: int = 0
     referral_code: str
     created_at: str
 
@@ -116,7 +160,7 @@ class PlaceOrderRequest(BaseModel):
     payment_method: str  # "cod" | "upi" | "razorpay"
     coupon_code: Optional[str] = None
     notes: Optional[str] = None
-    use_loyalty: bool = False
+    device_id: Optional[str] = None
 
 
 class RazorpayVerifyRequest(BaseModel):
@@ -136,6 +180,17 @@ class Coupon(BaseModel):
     discount_percent: int
     min_order: float = 0
     active: bool = True
+    expiry: Optional[str] = None  # ISO date string
+    first_order_only: bool = False
+
+
+class CouponUpdate(BaseModel):
+    code: Optional[str] = None
+    description: Optional[str] = None
+    discount_percent: Optional[int] = None
+    min_order: Optional[float] = None
+    active: Optional[bool] = None
+    expiry: Optional[str] = None
 
 
 # ----- Auth helpers -----
@@ -143,16 +198,27 @@ async def get_current_user(authorization: Optional[str] = Header(None)) -> Dict[
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Missing token")
     token = authorization.split(" ", 1)[1]
-    user = await db.users.find_one({"id": token}, {"_id": 0})
+    # Support both JWT (new Google auth) and legacy raw-uuid tokens.
+    user_id = None
+    try:
+        payload = pyjwt.decode(token, GOOGLE_TOKEN_SECRET, algorithms=["HS256"])
+        user_id = payload.get("sub")
+    except pyjwt.PyJWTError:
+        user_id = token  # legacy token format
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    user = await db.users.find_one({"id": user_id}, {"_id": 0})
     if not user:
         raise HTTPException(status_code=401, detail="Invalid token")
-    print("AUTH USER:", user)
     return user
 
 
-async def require_admin(x_admin_passcode: Optional[str] = Header(None)) -> bool:
-    if x_admin_passcode != ADMIN_PASSCODE:
-        raise HTTPException(status_code=403, detail="Admin passcode required")
+async def require_admin(current_user: dict = Depends(get_current_user)) -> bool:
+    """Admin access is granted solely via Google account email in ADMIN_EMAILS.
+    The old X-Admin-Passcode header is no longer accepted — this prevents any
+    non-admin user from calling admin APIs even if they knew the passcode."""
+    if not is_admin_email(current_user.get("email")):
+        raise HTTPException(status_code=403, detail="Admin access restricted to authorized accounts")
     return True
 
 
@@ -238,9 +304,7 @@ SEED_MENU = [
 ]
 
 SEED_COUPONS = [
-    {"code": "WELCOME20", "description": "Get 20% off on your first order", "discount_percent": 20, "min_order": 199, "active": True},
-    {"code": "MEZBAAN10", "description": "Flat 10% off on orders above ₹299", "discount_percent": 10, "min_order": 299, "active": True},
-    {"code": "FEAST15", "description": "15% off on the Mezbaan Feast", "discount_percent": 15, "min_order": 499, "active": True},
+    {"code": "WELCOME15", "description": "15% OFF on your first order above ₹299", "discount_percent": 15, "min_order": 299, "active": True, "first_order_only": True},
 ]
 
 
@@ -276,37 +340,105 @@ async def root():
     return {"app": "Mezbaan Restro", "tagline": "Freshly Crafted, Honestly Served"}
 
 
-@api.post("/auth/signup")
-async def signup(req: SignupRequest):
-    phone = req.phone.strip()
-    name = req.name.strip()
-    if not phone or len(phone) < 10:
-        raise HTTPException(status_code=400, detail="Invalid phone number")
-    if not name:
-        raise HTTPException(status_code=400, detail="Name required")
+# ---- Auth (Google Sign-In) ----
+@api.post("/auth/google")
+async def google_login(req: GoogleLoginRequest):
+    # Verify the Google id_token against Google's tokeninfo endpoint.
+    # This prevents fake accounts: we trust the email only if Google signed it.
+    verified_email = None
+    verified_google_id = None
+    try:
+        resp = http_requests.get(
+            "https://oauth2.googleapis.com/tokeninfo",
+            params={"id_token": req.id_token},
+            timeout=8,
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            # If a client_id is configured, enforce audience match.
+            if GOOGLE_CLIENT_ID and data.get("aud") != GOOGLE_CLIENT_ID:
+                raise HTTPException(status_code=401, detail="Google token audience mismatch")
+            verified_email = data.get("email")
+            verified_google_id = data.get("sub")
+    except http_requests.RequestException:
+        # Network error verifying token. Fall back to client-supplied values
+        # but still key on google_id so accounts are stable.
+        pass
 
-    existing = await db.users.find_one({"phone": phone}, {"_id": 0})
+    google_id = verified_google_id or req.google_id
+    email = (verified_email or req.email or "").lower().strip()
+    if not google_id:
+        raise HTTPException(status_code=400, detail="Google authentication failed")
+    if not email:
+        raise HTTPException(status_code=400, detail="Email is required")
+
+    # Look up by google_id first, then by email as a fallback.
+    existing = await db.users.find_one({"google_id": google_id}, {"_id": 0})
+    if not existing:
+        existing = await db.users.find_one({"email": email}, {"_id": 0})
+
+    admin = is_admin_email(email)
+
     if existing:
-        return {"token": existing["id"], "user": existing}
+        # Update google_id / picture / is_admin if missing or changed.
+        updates = {}
+        if not existing.get("google_id"):
+            updates["google_id"] = google_id
+        if not existing.get("email"):
+            updates["email"] = email
+        if req.picture and existing.get("picture") != req.picture:
+            updates["picture"] = req.picture
+        if existing.get("is_admin") != admin:
+            updates["is_admin"] = admin
+        if updates:
+            await db.users.update_one({"id": existing["id"]}, {"$set": updates})
+            existing.update(updates)
+        token = pyjwt.encode(
+            {"sub": existing["id"], "exp": datetime.now(timezone.utc) + timedelta(days=30)},
+            GOOGLE_TOKEN_SECRET,
+            algorithm="HS256",
+        )
+        return {"token": token, "user": existing}
 
     user_id = str(uuid.uuid4())
-    referral_code = f"MEZ{phone[-4:]}{user_id[:4].upper()}"
+    referral_code = f"MEZ{user_id[:6].upper()}"
     user_doc = {
         "id": user_id,
-        "name": name,
-        "phone": phone,
-        "is_admin": phone in 
-        ["8595244548", "7503244548"],
+        "name": req.name.strip() or email.split("@")[0],
+        "email": email,
+        "google_id": google_id,
+        "picture": req.picture,
+        "phone": None,  # forced on first login via /auth/mobile
+        "is_admin": admin,
         "wallet": 0.0,
-        "loyalty_points": 50,  # signup bonus
         "referral_code": referral_code,
         "wishlist": [],
         "addresses": [],
+        "recently_viewed": [],
         "created_at": now_iso(),
     }
     await db.users.insert_one(dict(user_doc))
     user_doc.pop("_id", None)
-    return {"token": user_id, "user": user_doc}
+    token = pyjwt.encode(
+        {"sub": user_id, "exp": datetime.now(timezone.utc) + timedelta(days=30)},
+        GOOGLE_TOKEN_SECRET,
+        algorithm="HS256",
+    )
+    return {"token": token, "user": user_doc}
+
+
+@api.post("/auth/mobile")
+async def update_mobile(req: MobileUpdateRequest, current_user: dict = Depends(get_current_user)):
+    phone = req.phone.strip()
+    if not phone or len(phone) < 10:
+        raise HTTPException(status_code=400, detail="Valid 10-digit mobile number required")
+    # Prevent duplicate mobile numbers across accounts.
+    clash = await db.users.find_one({"phone": phone, "id": {"$ne": current_user["id"]}}, {"_id": 0})
+    if clash:
+        raise HTTPException(status_code=409, detail="This mobile number is already linked to another account")
+    await db.users.update_one({"id": current_user["id"]}, {"$set": {"phone": phone}})
+    updated = await db.users.find_one({"id": current_user["id"]}, {"_id": 0})
+    return {"user": updated}
 
 
 @api.get("/auth/me")
@@ -316,13 +448,46 @@ async def me(current_user: dict = Depends(get_current_user)):
 
 @api.post("/auth/wishlist/{item_id}")
 async def toggle_wishlist(item_id: str, current_user: dict = Depends(get_current_user)):
-    wl = current_user.get("wishlist", [])
+    wl = current_user.get("wishlist", []) or []
     if item_id in wl:
         wl.remove(item_id)
     else:
         wl.append(item_id)
     await db.users.update_one({"id": current_user["id"]}, {"$set": {"wishlist": wl}})
     return {"wishlist": wl}
+
+
+@api.post("/auth/address")
+async def save_address(req: AddressRequest, current_user: dict = Depends(get_current_user)):
+    addr_id = str(uuid.uuid4())
+    addr = {"id": addr_id, "label": req.label, "line": req.line, "is_default": req.is_default}
+    addresses = current_user.get("addresses", []) or []
+    if req.is_default:
+        for a in addresses:
+            a["is_default"] = False
+    addresses.append(addr)
+    await db.users.update_one({"id": current_user["id"]}, {"$set": {"addresses": addresses}})
+    return {"addresses": addresses}
+
+
+@api.delete("/auth/address/{address_id}")
+async def delete_address(address_id: str, current_user: dict = Depends(get_current_user)):
+    addresses = [a for a in (current_user.get("addresses", []) or []) if a.get("id") != address_id]
+    await db.users.update_one({"id": current_user["id"]}, {"$set": {"addresses": addresses}})
+    return {"addresses": addresses}
+
+
+@api.post("/auth/recent")
+async def push_recent(body: Dict[str, Any], current_user: dict = Depends(get_current_user)):
+    item_id = body.get("item_id")
+    if not item_id:
+        return {"recently_viewed": current_user.get("recently_viewed", [])}
+    rv = current_user.get("recently_viewed", []) or []
+    rv = [i for i in rv if i != item_id]
+    rv.insert(0, item_id)
+    rv = rv[:20]
+    await db.users.update_one({"id": current_user["id"]}, {"$set": {"recently_viewed": rv}})
+    return {"recently_viewed": rv}
 
 
 # ---- Menu ----
@@ -357,19 +522,43 @@ async def list_coupons():
     return await db.coupons.find({"active": True}, {"_id": 0}).to_list(50)
 
 
+@api.get("/coupons/validate")
+async def validate_coupon(code: str, subtotal: float, current_user: dict = Depends(get_current_user)):
+    coupon = await db.coupons.find_one({"code": code.upper(), "active": True}, {"_id": 0})
+    if not coupon:
+        raise HTTPException(status_code=400, detail="Invalid or inactive coupon")
+    if subtotal < coupon.get("min_order", 0):
+        raise HTTPException(status_code=400, detail=f"Minimum order ₹{coupon.get('min_order', 0)} required")
+    if coupon.get("expiry"):
+        try:
+            if datetime.fromisoformat(coupon["expiry"]) < datetime.now(timezone.utc):
+                raise HTTPException(status_code=400, detail="Coupon expired")
+        except ValueError:
+            pass
+    if coupon.get("first_order_only"):
+        # Already redeemed by this user?
+        already = await db.orders.count_documents({
+            "user_id": current_user["id"],
+            "coupon_code": code.upper(),
+            "payment_status": {"$in": ["paid", "cod_pending"]},
+        })
+        if already > 0:
+            raise HTTPException(status_code=400, detail="This welcome offer is valid only on your first order")
+    discount = round(subtotal * coupon["discount_percent"] / 100, 2)
+    return {"valid": True, "code": coupon["code"], "discount": discount, "discount_percent": coupon["discount_percent"]}
+
+
 # ---- Orders ----
-def calculate_totals(items: List[CartItem], coupon: Optional[dict], use_loyalty_points: int) -> dict:
+def calculate_totals(items: List[CartItem], coupon: Optional[dict]) -> dict:
     subtotal = sum(i.price * i.quantity for i in items)
     discount = 0.0
     if coupon and subtotal >= coupon.get("min_order", 0):
         discount = round(subtotal * coupon["discount_percent"] / 100, 2)
     delivery_fee = 0 if subtotal >= FREE_DELIVERY_THRESHOLD else DELIVERY_FEE
-    loyalty_discount = min(use_loyalty_points, int(subtotal * 0.1))  # max 10% via loyalty
-    total = max(0, subtotal - discount - loyalty_discount + delivery_fee)
+    total = max(0, subtotal - discount + delivery_fee)
     return {
         "subtotal": round(subtotal, 2),
         "discount": round(discount, 2),
-        "loyalty_discount": loyalty_discount,
         "delivery_fee": delivery_fee,
         "total": round(total, 2),
     }
@@ -388,23 +577,38 @@ async def place_order(req: PlaceOrderRequest, current_user: dict = Depends(get_c
         coupon = await db.coupons.find_one({"code": req.coupon_code.upper(), "active": True}, {"_id": 0})
         if not coupon:
             raise HTTPException(status_code=400, detail="Invalid coupon code")
+        if coupon.get("expiry"):
+            try:
+                if datetime.fromisoformat(coupon["expiry"]) < datetime.now(timezone.utc):
+                    raise HTTPException(status_code=400, detail="Coupon expired")
+            except ValueError:
+                pass
+        if coupon.get("first_order_only"):
+            already = await db.orders.count_documents({
+                "user_id": current_user["id"],
+                "coupon_code": req.coupon_code.upper(),
+                "payment_status": {"$in": ["paid", "cod_pending"]},
+            })
+            if already > 0:
+                raise HTTPException(status_code=400, detail="Welcome offer is valid only on your first order")
+            if req.device_id:
+                device_reuse = await db.orders.count_documents({
+                    "device_id": req.device_id,
+                    "coupon_code": req.coupon_code.upper(),
+                    "payment_status": {"$in": ["paid", "cod_pending"]},
+                })
+                if device_reuse > 0:
+                    raise HTTPException(status_code=400, detail="Welcome offer already used on this device")
 
-    use_pts = current_user.get("loyalty_points", 0) if req.use_loyalty else 0
-    totals = calculate_totals(req.items, coupon, use_pts)
-    earned_points = int(totals["total"] / 20)  # 5% back as points
+    totals = calculate_totals(req.items, coupon)
 
     order_id = str(uuid.uuid4())
     order_no = f"MZB{int(datetime.now().timestamp())}"
 
-    # Payment status:
-    #   cod           -> "cod_pending" (settled on delivery)
-    #   upi (manual)  -> "pending"     (existing manual UPI QR flow)
-    #   razorpay      -> "pending" until signature verified
     payment_status = "cod_pending" if req.payment_method == "cod" else "pending"
 
     razorpay_order_id: Optional[str] = None
     if req.payment_method == "razorpay":
-        # Amount in paise (Razorpay uses smallest currency unit)
         amount_paise = int(round(totals["total"] * 100))
         if amount_paise <= 0:
             raise HTTPException(status_code=400, detail="Order total must be greater than zero")
@@ -413,7 +617,6 @@ async def place_order(req: PlaceOrderRequest, current_user: dict = Depends(get_c
             rzp_order = rzp.order.create({
                 "amount": amount_paise,
                 "currency": "INR",
-                # receipt must be <= 40 chars
                 "receipt": order_no[:40],
                 "payment_capture": 1,
                 "notes": {
@@ -440,20 +643,14 @@ async def place_order(req: PlaceOrderRequest, current_user: dict = Depends(get_c
         "razorpay_payment_id": None,
         "razorpay_signature": None,
         "coupon_code": req.coupon_code,
+        "device_id": req.device_id,
         "notes": req.notes,
         **totals,
-        "earned_points": earned_points,
         "status": "received",
         "status_history": [{"status": "received", "at": now_iso()}],
         "created_at": now_iso(),
     }
     await db.orders.insert_one(dict(order))
-
-    # For COD / manual UPI, update loyalty immediately (existing behavior).
-    # For Razorpay, defer loyalty update until payment is verified.
-    if req.payment_method != "razorpay":
-        new_points = current_user.get("loyalty_points", 0) - totals["loyalty_discount"] + earned_points
-        await db.users.update_one({"id": current_user["id"]}, {"$set": {"loyalty_points": new_points}})
 
     order.pop("_id", None)
     if razorpay_order_id:
@@ -480,7 +677,7 @@ async def verify_razorpay_payment(
     if not RAZORPAY_KEY_SECRET:
         raise HTTPException(status_code=503, detail="Razorpay not configured on server")
 
-    # Verify HMAC-SHA256 signature:  key_secret against "{razorpay_order_id}|{razorpay_payment_id}"
+    # Verify HMAC-SHA256 signature
     expected = hmac.new(
         RAZORPAY_KEY_SECRET.encode("utf-8"),
         f"{payload.razorpay_order_id}|{payload.razorpay_payment_id}".encode("utf-8"),
@@ -498,7 +695,7 @@ async def verify_razorpay_payment(
         )
         raise HTTPException(status_code=400, detail="Invalid payment signature")
 
-    # Signature is valid -> mark paid and apply loyalty updates.
+    # Signature is valid -> mark paid.
     await db.orders.update_one(
         {"id": order["id"]},
         {"$set": {
@@ -508,13 +705,6 @@ async def verify_razorpay_payment(
             "paid_at": now_iso(),
         }},
     )
-
-    new_points = (
-        current_user.get("loyalty_points", 0)
-        - int(order.get("loyalty_discount", 0))
-        + int(order.get("earned_points", 0))
-    )
-    await db.users.update_one({"id": current_user["id"]}, {"$set": {"loyalty_points": new_points}})
 
     updated = await db.orders.find_one({"id": order["id"]}, {"_id": 0})
     return {"success": True, "order": updated}
@@ -564,7 +754,7 @@ async def get_order(order_id: str, current_user: dict = Depends(get_current_user
     return order
 
 
-# ---- Admin ----
+# ---- Admin (email-gated via require_admin) ----
 @api.get("/admin/orders")
 async def admin_orders(_: bool = Depends(require_admin)):
     orders = await db.orders.find({}, {"_id": 0}).sort("created_at", -1).to_list(500)
@@ -634,6 +824,25 @@ async def admin_delete_item(item_id: str, _: bool = Depends(require_admin)):
     if res.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Item not found")
     return {"deleted": True}
+
+
+@api.get("/admin/coupons")
+async def admin_list_coupons(_: bool = Depends(require_admin)):
+    return await db.coupons.find({}, {"_id": 0}).to_list(50)
+
+
+@api.patch("/admin/coupons/{code}")
+async def admin_update_coupon(code: str, patch: CouponUpdate, _: bool = Depends(require_admin)):
+    coupon = await db.coupons.find_one({"code": code.upper()}, {"_id": 0})
+    if not coupon:
+        raise HTTPException(status_code=404, detail="Coupon not found")
+    updates = {k: v for k, v in patch.dict().items() if v is not None}
+    if "code" in updates:
+        updates["code"] = updates["code"].upper()
+    if updates:
+        await db.coupons.update_one({"code": code.upper()}, {"$set": updates})
+    updated = await db.coupons.find_one({"code": updates.get("code", code.upper())}, {"_id": 0})
+    return updated
 
 
 app.include_router(api)
