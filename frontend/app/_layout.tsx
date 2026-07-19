@@ -36,7 +36,11 @@ export default function RootLayout() {
     })();
   }, []);
 
-  useEffect(() => { if (loaded || error) SplashScreen.hideAsync(); }, [loaded, error]);
+  useEffect(() => {
+  if (bootDone && (loaded || error)) {
+    SplashScreen.hideAsync();
+  }
+}, [bootDone, loaded, error]);
 
   useEffect(() => {
     if (!bootDone) return;
@@ -74,8 +78,9 @@ export default function RootLayout() {
     setRecentlyViewed((prev) => { const next = [id, ...prev.filter((x) => x !== id)].slice(0, 20); api.pushRecentlyViewed(id).catch(() => {}); return next; });
   }, []);
 
-  if (!loaded && !error) return null;
-  if (!bootDone) return null;
+  if (!bootDone || (!loaded && !error)) {
+  return null;
+}
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
