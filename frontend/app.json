@@ -7,7 +7,7 @@
     "icon": "./assets/images/icon.png",
     "scheme": "mezbaan",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
+    "newArchEnabled": false,
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.emergent.restroorder.fa9uvz"
