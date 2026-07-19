@@ -1,41 +1,45 @@
+// Luxury Black + Gold + White typography
 export const COLORS = {
-  brand: "#B71C1C",
-  brandDark: "#8B1010",
-  gold: "#F4C430",
-  goldDark: "#D9A800",
-  black: "#121212",
+  brand: "#C9A227",
+  brandDark: "#A8841A",
+  gold: "#D4AF37",
+  goldLight: "#E8C96A",
+  goldDark: "#9C7C16",
+  black: "#0A0A0A",
+  blackSoft: "#141414",
+  charcoal: "#1C1C1E",
+  graphite: "#242426",
   white: "#FFFFFF",
-  surface: "#FFFFFF",
-  surfaceAlt: "#F7F7F7",
-  surfaceTint: "#FFEBEE",
-  border: "#E5E5E5",
-  textPrimary: "#121212",
-  textSecondary: "#6B6B6B",
-  textMuted: "#9A9A9A",
-  success: "#2E7D32",
-  warning: "#F57C00",
-  error: "#D32F2F",
-  veg: "#2E7D32",
-  nonVeg: "#B71C1C",
+  surface: "#141414",
+  surfaceAlt: "#1C1C1E",
+  surfaceTint: "#2A2A2D",
+  border: "#2E2E32",
+  borderLight: "#3A3A3F",
+  textPrimary: "#FFFFFF",
+  textSecondary: "#B8B8B8",
+  textMuted: "#7A7A7A",
+  success: "#3DD68C",
+  warning: "#F5A623",
+  error: "#FF5A5F",
+  veg: "#3DD68C",
+  nonVeg: "#FF5A5F",
+  overlay: "rgba(0,0,0,0.6)",
+  goldGlow: "rgba(212,175,55,0.25)",
 };
 
-export const SPACING = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32 };
-export const RADIUS = { sm: 6, md: 12, lg: 20, pill: 999 };
+export const SPACING = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32, xxxl: 48 };
+export const RADIUS = { xs: 4, sm: 8, md: 14, lg: 22, xl: 28, pill: 999 };
+
 export const SHADOW = {
-  card: {
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    elevation: 3,
-  },
-  strong: {
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.16,
-    shadowRadius: 16,
-    elevation: 8,
-  },
+  card: { shadowColor: "#000", shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.5, shadowRadius: 16, elevation: 6 },
+  strong: { shadowColor: "#000", shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.7, shadowRadius: 24, elevation: 12 },
+  gold: { shadowColor: "#D4AF37", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 12, elevation: 5 },
 };
 
 export const FONT = { regular: "400" as const, medium: "600" as const, bold: "800" as const };
+
+export const GRADIENTS = {
+  blackFade: ["rgba(0,0,0,0)", "rgba(0,0,0,0.7)", "#0A0A0A"],
+  goldFade: ["#D4AF37", "#C9A227", "#9C7C16"],
+  charcoalFade: ["#1C1C1E", "#0A0A0A"],
+};
