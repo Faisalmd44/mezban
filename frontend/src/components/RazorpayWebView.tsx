@@ -46,7 +46,7 @@ const buildCheckoutHtml = (opts: {
     <style>
       html, body { margin: 0; padding: 0; background: #000; color: #fff; font-family: -apple-system, Roboto, sans-serif; }
       .center { display: flex; align-items: center; justify-content: center; height: 100vh; flex-direction: column; gap: 12px; }
-      .btn { background: #E63946; color: #fff; padding: 12px 24px; border-radius: 999px; border: 0; font-weight: 700; }
+      .btn { background: #D4AF37; color: #000; padding: 12px 24px; border-radius: 999px; border: 0; font-weight: 700; }
     </style>
   </head>
   <body>
@@ -74,7 +74,7 @@ const buildCheckoutHtml = (opts: {
             contact: ${JSON.stringify(opts.prefillContact)},
             email: ${JSON.stringify(opts.prefillEmail)}
           },
-          theme: { color: '#E63946' },
+          theme: { color: '#D4AF37' },
           handler: function (response) {
             post({ type: 'success', payload: response });
           },
@@ -161,12 +161,7 @@ export default function RazorpayWebView(props: Props) {
   return (
     <View style={styles.wrap} testID="razorpay-webview-wrap">
       <View style={styles.headerRow}>
-        <Pressable
-          testID="razorpay-close"
-          onPress={props.onDismiss}
-          style={styles.closeBtn}
-          hitSlop={12}
-        >
+        <Pressable testID="razorpay-close" onPress={props.onDismiss} style={styles.closeBtn} hitSlop={12}>
           <Ionicons name="close" size={22} color={COLORS.textPrimary} />
         </Pressable>
         <Text style={styles.headerText}>Secure Payment</Text>
@@ -187,7 +182,6 @@ export default function RazorpayWebView(props: Props) {
           </View>
         )}
         style={styles.webview}
-        // On web the WebView is rendered via an iframe; keep it flex-filled.
         {...(Platform.OS === "web" ? { containerStyle: { flex: 1 } as any } : {})}
       />
     </View>
@@ -196,33 +190,10 @@ export default function RazorpayWebView(props: Props) {
 
 const styles = StyleSheet.create({
   wrap: { flex: 1, backgroundColor: "#000" },
-  headerRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: SPACING.lg,
-    paddingVertical: SPACING.sm,
-    backgroundColor: "#fff",
-  },
+  headerRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: SPACING.lg, paddingVertical: SPACING.sm, backgroundColor: "#fff" },
   headerText: { fontWeight: "800", color: COLORS.textPrimary },
-  closeBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: RADIUS.pill,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: COLORS.surfaceAlt,
-  },
+  closeBtn: { width: 36, height: 36, borderRadius: RADIUS.pill, alignItems: "center", justifyContent: "center", backgroundColor: COLORS.surfaceAlt },
   webview: { flex: 1, backgroundColor: "#000" },
-  loader: {
-    position: "absolute",
-    top: 0,
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: "#000",
-    alignItems: "center",
-    justifyContent: "center",
-  },
+  loader: { position: "absolute", top: 0, bottom: 0, left: 0, right: 0, backgroundColor: "#000", alignItems: "center", justifyContent: "center" },
   loaderText: { color: "#fff", marginTop: 12 },
 });
