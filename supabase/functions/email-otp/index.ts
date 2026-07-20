@@ -6,10 +6,14 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
 };
 
+// Client-facing auth operations (signInWithOtp / verifyOtp) MUST use the anon
+// key, not the service role key. The service role key bypasses the auth flow
+// and suppresses email delivery — which is why "Send Code" never produced an
+// email. The anon key triggers Supabase Auth's normal email OTP delivery.
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
-const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
 
-const client = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
+const client = createClient(SUPABASE_URL, ANON_KEY, {
   auth: { autoRefreshToken: false, persistSession: false },
 });
 
