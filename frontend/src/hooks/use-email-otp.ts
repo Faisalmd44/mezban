@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 
 export type OtpState = "email" | "otp";
 
@@ -98,6 +98,12 @@ export function useEmailOtp() {
     },
     []
   );
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, []);
 
   return { sendOtp, verifyOtp, loading, error, resendTimer, otpExpiry, setError };
 }
