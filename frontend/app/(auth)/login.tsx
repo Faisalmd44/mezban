@@ -31,7 +31,8 @@ export default function LoginScreen() {
   const otpInputRef = useRef<TextInput>(null);
 
   const { signIn, loading: googleLoading } = useGoogleAuth();
-  const { sendOtp, verifyOtp, loading: otpLoading, resendTimer } = useEmailOtp();
+  const { sendOtp, verifyOtp, loading: otpLoading, resendTimer, error: otpError } = useEmailOtp();
+  const displayError = error || otpError;
 
   const finishLogin = async (res: { token: string; user: any }) => {
     await saveToken(res.token);
@@ -174,7 +175,7 @@ export default function LoginScreen() {
                   onSubmitEditing={onSendOtp}
                 />
               </View>
-              {error ? <Text testID="login-error" style={styles.error}>{error}</Text> : null}
+              {displayError ? <Text testID="login-error" style={styles.error}>{displayError}</Text> : null}
               <Pressable testID="login-send-otp" onPress={onSendOtp} disabled={otpLoading || !email} style={({ pressed }) => [styles.cta, pressed && { transform: [{ scale: 0.98 }] }]}>
                 {otpLoading ? <ActivityIndicator color={COLORS.black} /> : (
                   <>
@@ -210,7 +211,7 @@ export default function LoginScreen() {
                   textAlign="center"
                 />
               </View>
-              {error ? <Text testID="login-error" style={styles.error}>{error}</Text> : null}
+              {displayError ? <Text testID="login-error" style={styles.error}>{displayError}</Text> : null}
               <Pressable testID="login-verify-otp" onPress={onVerifyOtp} disabled={loading || otpLoading || otp.length !== 6} style={({ pressed }) => [styles.cta, pressed && { transform: [{ scale: 0.98 }] }]}>
                 {loading || otpLoading ? <ActivityIndicator color={COLORS.black} /> : (
                   <>
