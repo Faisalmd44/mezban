@@ -21,8 +21,15 @@ export default function LoginScreen() {
   const router = useRouter();
   const { setUser } = useApp();
   const insets = useSafeAreaInsets();
-  const { signIn, loading: googleLoading } = useGoogleAuth();
+  
+  // const { signIn, loading: googleLoading } = useGoogleAuth();
+  
+  const googleLoading = false;
 
+  const signIn = async () => {
+  alert("Google disabled");
+  return null;
+  };
   const onGoogleSignIn = async () => {
     setError("");
     const googleUser = await signIn();
