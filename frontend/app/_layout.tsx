@@ -1,5 +1,4 @@
 import { Stack, useRouter, useSegments } from "expo-router";
-import * as SplashScreen from "expo-splash-screen";
 import { useEffect, useState, useCallback } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -11,8 +10,6 @@ import {
   loadRecentlyViewed, saveRecentlyViewed,
 } from "@/src/store";
 import { api } from "@/src/api";
-
-SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
   const [loaded, error] = useIconFonts();
@@ -35,12 +32,6 @@ export default function RootLayout() {
       } finally { setBootDone(true); }
     })();
   }, []);
-
-  useEffect(() => {
-  if (bootDone && (loaded || error)) {
-    SplashScreen.hideAsync();
-  }
-}, [bootDone, loaded, error]);
 
   useEffect(() => {
     if (!bootDone) return;
