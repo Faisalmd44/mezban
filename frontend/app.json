@@ -1,28 +1,24 @@
 {
   "expo": {
-    "name": "Mezbaan",
-    "slug": "frontend",
+    "name": "Mezbaan Restro",
+    "slug": "mezbaan-restro",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "mezbaan",
-    "userInterfaceStyle": "automatic",
+    "userInterfaceStyle": "dark",
     "newArchEnabled": true,
-    "ios": {
-      "supportsTablet": true,
-      "bundleIdentifier": "com.emergent.restroorder.fa9uvz"
-    },
     "android": {
+      "package": "com.emergent.restroorder.fa9uvz",
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#000"
       },
-      "edgeToEdgeEnabled": true,
-      "package": "com.emergent.restroorder.fa9uvz"
+      "edgeToEdgeEnabled": true
     },
     "web": {
       "bundler": "metro",
-      "output": "single",
+      "output": "static",
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
@@ -36,16 +32,11 @@
           "backgroundColor": "#000"
         }
       ],
-      "expo-font"
+      "expo-font",
+      "./plugins/withDebuggableVariants"
     ],
     "experiments": {
-      "typedRoutes": true
-    },
-    "extra": {
-      "router": {},
-      "eas": {
-        "projectId": "8cc27d72-fb08-4be3-9aaa-83dde7a4ed80"
-      }
+      "tsdImports": true
     }
   }
 }
