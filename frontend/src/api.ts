@@ -13,7 +13,14 @@ async function request(path: string, opts: RequestInit = {}, withAuth = true) {
     ...(opts.headers as Record<string, string> | undefined),
   };
   if (withAuth) Object.assign(headers, await authHeader());
-  const res = await fetch(`${BASE}/api${path}`, { ...opts, headers });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10000);
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}/api${path}`, { ...opts, headers, signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+  }
   if (!res.ok) {
     const text = await res.text();
     throw new Error(text || `Request failed: ${res.status}`);

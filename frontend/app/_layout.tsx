@@ -3,6 +3,7 @@ import { useEffect, useState, useCallback } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
+import * as SplashScreen from "expo-splash-screen";
 
 import { useIconFonts } from "@/src/hooks/use-icon-fonts";
 import {
@@ -10,6 +11,10 @@ import {
   loadRecentlyViewed, saveRecentlyViewed,
 } from "@/src/store";
 import { api } from "@/src/api";
+
+SplashScreen.preventAutoHideAsync().catch(() => {});
+
+const BOOT_TIMEOUT = 4000;
 
 export default function RootLayout() {
   const [loaded, error] = useIconFonts();
@@ -21,16 +26,19 @@ export default function RootLayout() {
   const segments = useSegments();
 
   useEffect(() => {
-    (async () => {
+    let cancelled = false;
+    const boot = (async () => {
       try {
         const token = await loadToken();
         if (token) {
-          try { const me = await api.me(); setUser(me); } catch { await clearToken(); }
+          try { const me = await api.me(); if (!cancelled) setUser(me); } catch { await clearToken(); }
         }
-        setCart(await loadCart());
-        setRecentlyViewed(await loadRecentlyViewed());
-      } finally { setBootDone(true); }
+        if (!cancelled) setCart(await loadCart());
+        if (!cancelled) setRecentlyViewed(await loadRecentlyViewed());
+      } finally { if (!cancelled) setBootDone(true); }
     })();
+    const timer = setTimeout(() => { if (!cancelled) setBootDone(true); }, BOOT_TIMEOUT);
+    return () => { cancelled = true; clearTimeout(timer); };
   }, []);
 
   useEffect(() => {
@@ -69,9 +77,13 @@ export default function RootLayout() {
     setRecentlyViewed((prev) => { const next = [id, ...prev.filter((x) => x !== id)].slice(0, 20); api.pushRecentlyViewed(id).catch(() => {}); return next; });
   }, []);
 
-  if (!bootDone || (!loaded && !error)) {
-  return null;
-}
+  const ready = bootDone && (loaded || error);
+
+  useEffect(() => {
+    if (ready) SplashScreen.hideAsync().catch(() => {});
+  }, [ready]);
+
+  if (!ready) return null;
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>

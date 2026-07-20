@@ -22,14 +22,7 @@ export default function LoginScreen() {
   const { setUser } = useApp();
   const insets = useSafeAreaInsets();
   
-  // const { signIn, loading: googleLoading } = useGoogleAuth();
-  
-  const googleLoading = false;
-
-  const signIn = async () => {
-  alert("Google disabled");
-  return null;
-  };
+  const { signIn, loading: googleLoading } = useGoogleAuth();
   const onGoogleSignIn = async () => {
     setError("");
     const googleUser = await signIn();
