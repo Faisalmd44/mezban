@@ -222,7 +222,7 @@ async def get_current_user(authorization: Optional[str] = Header(None)) -> Dict[
 
 async def require_admin(current_user: dict = Depends(get_current_user)) -> bool:
     """Admin access is granted solely via Google account email in ADMIN_EMAILS.
-    The old X-Admin-Passcode header is no longer accepted \u2014 this prevents any
+    The old X-Admin-Passcode header is no longer accepted — this prevents any
     non-admin user from calling admin APIs even if they knew the passcode."""
     if not is_admin_email(current_user.get("email")):
         raise HTTPException(status_code=403, detail="Admin access restricted to authorized accounts")
@@ -255,7 +255,7 @@ SEED_MENU = [
      "description": "Tandoori paneer with creamy white sauce.",
      "image": "https://images.unsplash.com/photo-1513104890138-7c749659a591?w=600", "popular": True},
     {"name": "Mezbaan Chicken Supreme", "category": "Pizza", "price": 249, "veg": False,
-     "description": "Loaded chicken, jalape\u00f1o & extra cheese.",
+     "description": "Loaded chicken, jalapeño & extra cheese.",
      "image": "https://images.unsplash.com/photo-1604382354936-07c5d9983bd3?w=600"},
     {"name": "Mezbaan Loaded Chicken Feast", "category": "Pizza", "price": 299, "veg": False,
      "description": "Triple chicken toppings, BBQ glaze, mozzarella.",
@@ -281,7 +281,7 @@ SEED_MENU = [
      "description": "Fries tossed in peri peri spice.",
      "image": "https://images.unsplash.com/photo-1639024471283-03518883512d?w=600", "popular": True},
     {"name": "Loaded Fries", "category": "Fries", "price": 130, "veg": True,
-     "description": "Cheese, jalape\u00f1o & herbs over crispy fries.",
+     "description": "Cheese, jalapeño & herbs over crispy fries.",
      "image": "https://images.unsplash.com/photo-1585109649139-366815a0d713?w=600"},
     # Wraps
     {"name": "Chicken Wrap", "category": "Wraps", "price": 69, "veg": False,
@@ -311,7 +311,7 @@ SEED_MENU = [
 ]
 
 SEED_COUPONS = [
-    {"code": "WELCOME15", "description": "15% OFF on your first order above \u20b9299", "discount_percent": 15, "min_order": 299, "active": True, "first_order_only": True},
+    {"code": "WELCOME15", "description": "15% OFF on your first order above ₹299", "discount_percent": 15, "min_order": 299, "active": True, "first_order_only": True},
 ]
 
 
@@ -427,19 +427,21 @@ async def google_login(req: GoogleLoginRequest):
     return {"token": token, "user": user_doc}
 
 
-# ---- Auth (Email OTP via Supabase) ----
+# ---- Auth (Email OTP) ----
 @api.post("/auth/email-otp")
 async def email_otp_login(req: EmailOtpLoginRequest):
     SUPABASE_URL = os.getenv("SUPABASE_URL", "")
+    SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
     SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "")
+    api_key = SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY
     verified_email = None
-    if SUPABASE_URL and SUPABASE_ANON_KEY:
+    if SUPABASE_URL and api_key:
         try:
             resp = http_requests.get(
                 f"{SUPABASE_URL}/auth/v1/user",
                 headers={
                     "Authorization": f"Bearer {req.supabase_token}",
-                    "apikey": SUPABASE_ANON_KEY,
+                    "apikey": api_key,
                 },
                 timeout=8,
             )
@@ -599,7 +601,7 @@ async def validate_coupon(code: str, subtotal: float, current_user: dict = Depen
     if not coupon:
         raise HTTPException(status_code=400, detail="Invalid or inactive coupon")
     if subtotal < coupon.get("min_order", 0):
-        raise HTTPException(status_code=400, detail=f"Minimum order \u20b9{coupon.get('min_order', 0)} required")
+        raise HTTPException(status_code=400, detail=f"Minimum order ₹{coupon.get('min_order', 0)} required")
     if coupon.get("expiry"):
         try:
             if datetime.fromisoformat(coupon["expiry"]) < datetime.now(timezone.utc):
