@@ -20,6 +20,8 @@ from typing import List, Optional, Dict, Any
 import razorpay
 import jwt as pyjwt
 import requests as http_requests
+from pymongo import ASCENDING, DESCENDING
+from pymongo.errors import DuplicateKeyError
 
 
 ROOT_DIR = Path(__file__).parent
@@ -315,6 +317,154 @@ SEED_COUPONS = [
 ]
 
 
+def _merge_field(keep: Any, drop: Any) -> Any:
+    """Pick the non-empty value from two candidate fields during account merge."""
+    if keep not in (None, "", [], {}):
+        return keep
+    return drop
+
+
+async def merge_user_accounts(keep: dict, drop: dict) -> dict:
+    """Merge `drop` into `keep` (same email / same user, stale duplicate).
+
+    The kept record retains its identity (`id`) so existing JWTs keep working.
+    Wishlist, addresses and recently-viewed are unioned; the first non-empty
+    phone/name/picture/google_id wins. Orders are repointed to the kept id.
+    """
+    merged_fields: Dict[str, Any] = {}
+    for key in ("name", "phone", "picture", "google_id"):
+        val = _merge_field(keep.get(key), drop.get(key))
+        if val != keep.get(key):
+            merged_fields[key] = val
+
+    for key in ("wishlist", "addresses", "recently_viewed"):
+        kept_list = keep.get(key, []) or []
+        drop_list = drop.get(key, []) or []
+        if key == "addresses":
+            seen = {a.get("id") for a in kept_list if isinstance(a, dict)}
+            combined = list(kept_list)
+            for a in drop_list:
+                if isinstance(a, dict) and a.get("id") not in seen:
+                    combined.append(a)
+                    seen.add(a.get("id"))
+        else:
+            combined = list(kept_list)
+            for x in drop_list:
+                if x not in combined:
+                    combined.append(x)
+        if len(combined) > len(kept_list):
+            merged_fields[key] = combined
+
+    if drop.get("wallet") and (keep.get("wallet") or 0.0) == 0.0:
+        merged_fields["wallet"] = drop.get("wallet")
+
+    if merged_fields:
+        await db.users.update_one({"id": keep["id"]}, {"$set": merged_fields})
+        keep.update(merged_fields)
+
+    await db.orders.update_many({"user_id": drop["id"]}, {"$set": {"user_id": keep["id"]}})
+    await db.users.delete_one({"id": drop["id"]})
+    logging.info(f"Merged duplicate user {drop['id']} into {keep['id']} (email={keep.get('email')})")
+    return keep
+
+
+async def migrate_duplicate_accounts():
+    """Collapse stale duplicate user records produced by prior auth attempts.
+
+    Two sources of duplicates exist in this data set:
+      1. Same email created more than once (old phone-OTP flow inserted a row
+         per verification attempt before email linking existed).
+      2. Same phone on a record with no/empty email plus a newer email-backed
+         record — these are the same physical user.
+    We keep the oldest record per email and re-point its orders, then collapse
+    phone-only duplicates into the matching email record. Safe to re-run.
+    """
+    collapsed = 0
+
+    # 1) Dedup by email (case-insensitive, ignore empty emails).
+    pipeline = [
+        {"$match": {"email": {"$exists": True, "$ne": None, "$ne": ""}}},
+        {"$group": {"_id": {"$toLower": "$email"}, "ids": {"$push": "$id"}, "count": {"$sum": 1}}},
+        {"$match": {"count": {"$gt": 1}}},
+    ]
+    async for group in db.users.aggregate(pipeline):
+        ids = group["ids"]
+        docs = await db.users.find({"id": {"$in": ids}}, {"_id": 0}).sort("created_at", ASCENDING).to_list(len(ids))
+        keep = docs[0]
+        for drop in docs[1:]:
+            keep = await merge_user_accounts(keep, drop)
+            collapsed += 1
+
+    # 2) Collapse legacy phone-only records into the email-backed record for the
+    #    same phone, when exactly one email record holds that phone.
+    phone_pipeline = [
+        {"$match": {"phone": {"$exists": True, "$ne": None, "$ne": ""}}},
+        {"$group": {"_id": "$phone", "ids": {"$push": "$id"}, "emails": {"$addToSet": "$email"}, "count": {"$sum": 1}}},
+        {"$match": {"count": {"$gt": 1}}},
+    ]
+    async for group in db.users.aggregate(phone_pipeline):
+        ids = group["ids"]
+        docs = await db.users.find({"id": {"$in": ids}}, {"_id": 0}).sort("created_at", ASCENDING).to_list(len(ids))
+        email_docs = [d for d in docs if d.get("email")]
+        if not email_docs:
+            continue
+        keep = email_docs[0]
+        for drop in docs:
+            if drop["id"] == keep["id"]:
+                continue
+            keep = await merge_user_accounts(keep, drop)
+            collapsed += 1
+
+    # 3) Drop the same phone from any remaining orphan records so the unique
+    #    phone index (sparse) can be created cleanly.
+    orphans = await db.users.find(
+        {"phone": {"$exists": True, "$ne": None, "$ne": ""}}, {"_id": 0, "id": 1, "phone": 1, "email": 1, "created_at": 1}
+    ).sort("created_at", ASCENDING).to_list(10000)
+    seen_phones: Dict[str, str] = {}
+    for doc in orphans:
+        ph = doc.get("phone")
+        if not ph:
+            continue
+        owner = seen_phones.get(ph)
+        if owner is None:
+            seen_phones[ph] = doc["id"]
+        elif owner != doc["id"]:
+            await db.users.update_one({"id": doc["id"]}, {"$set": {"phone": None}})
+            collapsed += 1
+
+    if collapsed:
+        logging.info(f"migrate_duplicate_accounts: collapsed {collapsed} duplicate user record(s)")
+
+
+async def ensure_user_indexes():
+    """Unique constraints that enforce one email = one user = one phone."""
+    try:
+        await db.users.create_index("id", unique=True)
+    except DuplicateKeyError:
+        pass
+    # Unique email (sparse so pre-email legacy rows are allowed).
+    try:
+        await db.users.create_index(
+            "email",
+            unique=True,
+            partialFilterExpression={"email": {"$type": "string", "$ne": ""}},
+            name="uniq_email_lower",
+            collation={"locale": "en", "strength": 2},
+        )
+    except DuplicateKeyError:
+        logging.warning("uniq_email_lower index creation skipped: duplicate emails remain")
+    # Unique phone (sparse so rows without a phone are allowed).
+    try:
+        await db.users.create_index(
+            "phone",
+            unique=True,
+            partialFilterExpression={"phone": {"$type": "string", "$ne": ""}},
+            name="uniq_phone",
+        )
+    except DuplicateKeyError:
+        logging.warning("uniq_phone index creation skipped: duplicate phones remain")
+
+
 async def seed_database():
     count = await db.menu.count_documents({})
     if count == 0:
@@ -417,7 +567,18 @@ async def google_login(req: GoogleLoginRequest):
         "recently_viewed": [],
         "created_at": now_iso(),
     }
-    await db.users.insert_one(dict(user_doc))
+    try:
+        await db.users.insert_one(dict(user_doc))
+    except DuplicateKeyError:
+        existing = await db.users.find_one({"email": email}, {"_id": 0})
+        if not existing:
+            raise HTTPException(status_code=409, detail="Account creation conflict; please sign in instead")
+        token = pyjwt.encode(
+            {"sub": existing["id"], "exp": datetime.now(timezone.utc) + timedelta(days=30)},
+            GOOGLE_TOKEN_SECRET,
+            algorithm="HS256",
+        )
+        return {"token": token, "user": existing}
     user_doc.pop("_id", None)
     token = pyjwt.encode(
         {"sub": user_id, "exp": datetime.now(timezone.utc) + timedelta(days=30)},
@@ -491,7 +652,18 @@ async def email_password_login(req: EmailPasswordLoginRequest):
         "recently_viewed": [],
         "created_at": now_iso(),
     }
-    await db.users.insert_one(dict(user_doc))
+    try:
+        await db.users.insert_one(dict(user_doc))
+    except DuplicateKeyError:
+        existing = await db.users.find_one({"email": email}, {"_id": 0})
+        if not existing:
+            raise HTTPException(status_code=409, detail="Account creation conflict; please sign in instead")
+        token = pyjwt.encode(
+            {"sub": existing["id"], "exp": datetime.now(timezone.utc) + timedelta(days=30)},
+            GOOGLE_TOKEN_SECRET,
+            algorithm="HS256",
+        )
+        return {"token": token, "user": existing}
     user_doc.pop("_id", None)
     token = pyjwt.encode(
         {"sub": user_id, "exp": datetime.now(timezone.utc) + timedelta(days=30)},
@@ -506,9 +678,22 @@ async def update_mobile(req: MobileUpdateRequest, current_user: dict = Depends(g
     phone = req.phone.strip()
     if not phone or len(phone) < 10:
         raise HTTPException(status_code=400, detail="Valid 10-digit mobile number required")
+
+    current_email = (current_user.get("email") or "").lower().strip()
+
+    # Any other record holding this phone.
     clash = await db.users.find_one({"phone": phone, "id": {"$ne": current_user["id"]}}, {"_id": 0})
     if clash:
-        raise HTTPException(status_code=409, detail="This mobile number is already linked to another account")
+        clash_email = (clash.get("email") or "").lower().strip()
+        # Same email (or a legacy no-email record for the same user) -> merge
+        # the stale duplicate into the current authenticated account instead
+        # of blocking the user from their own phone.
+        if not clash_email or clash_email == current_email:
+            current_user = await merge_user_accounts(current_user, clash)
+        else:
+            # Phone genuinely belongs to a different user.
+            raise HTTPException(status_code=409, detail="This mobile number is already linked to another account")
+
     await db.users.update_one({"id": current_user["id"]}, {"$set": {"phone": phone}})
     updated = await db.users.find_one({"id": current_user["id"]}, {"_id": 0})
     return {"user": updated}
@@ -853,6 +1038,8 @@ logger = logging.getLogger(__name__)
 
 @app.on_event("startup")
 async def on_startup():
+    await migrate_duplicate_accounts()
+    await ensure_user_indexes()
     await seed_database()
 
 
