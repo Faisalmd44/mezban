@@ -10,7 +10,11 @@ export function useEmailAuth() {
       setError("");
       setLoading(true);
       try {
-        const { data, error: sbError } = await supabase.auth.signUp({ email, password });
+        const { data, error: sbError } = await supabase.auth.signUp({
+          email,
+          password,
+          options: { emailRedirectTo: "mezbaan://reset-password" },
+        });
         if (sbError) {
           setError(sbError.message);
           return null;
@@ -61,7 +65,7 @@ export function useEmailAuth() {
       setLoading(true);
       try {
         const { error: sbError } = await supabase.auth.resetPasswordForEmail(email, {
-          redirectTo: "mezban://reset-password",
+          redirectTo: "mezbaan://reset-password",
         });
         if (sbError) {
           setError(sbError.message);
