@@ -30,11 +30,9 @@ const savePhone = async () => {
   try {
     setSaving(true);
 
-    const res = await api.post("/auth/mobile", {
-      phone,
-    });
+    const res = await api.updateMobile(phone);
 
-    setUser(res.data.user);
+    setUser(res.user);
 
     Alert.alert("Success", "Mobile number updated successfully");
   } catch (e: any) {
