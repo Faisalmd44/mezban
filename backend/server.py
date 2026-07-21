@@ -313,7 +313,14 @@ SEED_MENU = [
 ]
 
 SEED_COUPONS = [
-    {"code": "WELCOME15", "description": "15% OFF on your first order above ₹299", "discount_percent": 15, "min_order": 299, "active": True, "first_order_only": True},
+    {
+        "code": "WELCOME15",
+        "description": "15% OFF on your first order above ₹499",
+        "discount_percent": 15,
+        "min_order": 499,
+        "active": True,
+        "first_order_only": True,
+    }
 ]
 
 
@@ -467,28 +474,30 @@ async def ensure_user_indexes():
 
 async def seed_database():
     count = await db.menu.count_documents({})
-    if count == 0:
-        items = []
-        for item in SEED_MENU:
-            full = {
-                "id": str(uuid.uuid4()),
-                "name": item["name"],
-                "description": item["description"],
-                "category": item["category"],
-                "price": float(item["price"]),
-                "image": item["image"],
-                "veg": item["veg"],
-                "in_stock": True,
-                "variants": item.get("variants", []),
-                "popular": item.get("popular", False),
-            }
-            items.append(full)
-        await db.menu.insert_many(items)
-        logging.info(f"Seeded {len(items)} menu items")
-    coupon_count = await db.coupons.count_documents({})
-    if coupon_count == 0:
-        await db.coupons.insert_many([dict(c) for c in SEED_COUPONS])
-        logging.info("Seeded coupons")
+if count == 0:
+    items = []
+    for item in SEED_MENU:
+        full = {
+            "id": str(uuid.uuid4()),
+            "name": item["name"],
+            "description": item["description"],
+            "category": item["category"],
+            "price": float(item["price"]),
+            "image": item["image"],
+            "veg": item["veg"],
+            "in_stock": True,
+            "variants": item.get("variants", []),
+            "popular": item.get("popular", False),
+        }
+        items.append(full)
+
+    await db.menu.insert_many(items)
+    logging.info(f"Seeded {len(items)} menu items")
+
+# Reset coupons (testing)
+await db.coupons.delete_many({})
+await db.coupons.insert_many([dict(c) for c in SEED_COUPONS])
+logging.info("Coupons reset successfully")
 
 
 # ----- Routes -----
