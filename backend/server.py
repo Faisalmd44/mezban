@@ -339,6 +339,7 @@ async def merge_user_accounts(keep: dict, drop: dict) -> dict:
     phone/name/picture/google_id wins. Orders are repointed to the kept id.
     """
     merged_fields: Dict[str, Any] = {}
+
     for key in ("name", "phone", "picture", "google_id"):
         val = _merge_field(keep.get(key), drop.get(key))
         if val != keep.get(key):
@@ -347,6 +348,7 @@ async def merge_user_accounts(keep: dict, drop: dict) -> dict:
     for key in ("wishlist", "addresses", "recently_viewed"):
         kept_list = keep.get(key, []) or []
         drop_list = drop.get(key, []) or []
+
         if key == "addresses":
             seen = {a.get("id") for a in kept_list if isinstance(a, dict)}
             combined = list(kept_list)
@@ -359,6 +361,7 @@ async def merge_user_accounts(keep: dict, drop: dict) -> dict:
             for x in drop_list:
                 if x not in combined:
                     combined.append(x)
+
         if len(combined) > len(kept_list):
             merged_fields[key] = combined
 
@@ -367,25 +370,31 @@ async def merge_user_accounts(keep: dict, drop: dict) -> dict:
 
     phone = merged_fields.pop("phone", None)
 
-if merged_fields:
-    await db.users.update_one({"id": keep["id"]}, {"$set": merged_fields})
-    keep.update(merged_fields)
+    if merged_fields:
+        await db.users.update_one(
+            {"id": keep["id"]},
+            {"$set": merged_fields}
+        )
+        keep.update(merged_fields)
 
     await db.orders.update_many(
-    {"user_id": drop["id"]},
-    {"$set": {"user_id": keep["id"]}}
-)
+        {"user_id": drop["id"]},
+        {"$set": {"user_id": keep["id"]}}
+    )
 
     await db.users.delete_one({"id": drop["id"]})
 
-if phone:
-    await db.users.update_one(
-        {"id": keep["id"]},
-        {"$set": {"phone": phone}}
-    ) 
-    keep["phone"] = phone
-    
-    logging.info(f"Merged duplicate user {drop['id']} into {keep['id']} (email={keep.get('email')})")
+    if phone:
+        await db.users.update_one(
+            {"id": keep["id"]},
+            {"$set": {"phone": phone}}
+        )
+        keep["phone"] = phone
+
+    logging.info(
+        f"Merged duplicate user {drop['id']} into {keep['id']} (email={keep.get('email')})"
+    )
+
     return keep
 
 
