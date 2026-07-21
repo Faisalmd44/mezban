@@ -32,13 +32,13 @@ export type GoogleLoginPayload = {
   id_token: string; email: string; name: string; picture?: string; google_id: string; device_id: string;
 };
 
-export type EmailOtpLoginPayload = {
+export type EmailPasswordLoginPayload = {
   supabase_token: string; email: string; name?: string; device_id: string;
 };
 
 export const api = {
   googleLogin: (payload: GoogleLoginPayload) => request("/auth/google", { method: "POST", body: JSON.stringify(payload) }, false),
-  emailOtpLogin: (payload: EmailOtpLoginPayload) => request("/auth/email-otp", { method: "POST", body: JSON.stringify(payload) }, false),
+  emailPasswordLogin: (payload: EmailPasswordLoginPayload) => request("/auth/email-password", { method: "POST", body: JSON.stringify(payload) }, false),
   updateMobile: (phone: string) => request("/auth/mobile", { method: "POST", body: JSON.stringify({ phone }) }),
   me: () => request("/auth/me"),
   toggleWishlist: (id: string) => request(`/auth/wishlist/${id}`, { method: "POST" }),
