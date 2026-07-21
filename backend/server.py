@@ -445,21 +445,21 @@ async def ensure_user_indexes():
     # Unique email (sparse so pre-email legacy rows are allowed).
     try:
         await db.users.create_index(
-            "email",
-            unique=True,
-            partialFilterExpression={"email": {"$type": "string", "$ne": ""}},
-            name="uniq_email_lower",
-            collation={"locale": "en", "strength": 2},
+    "email",
+    unique=True,
+    sparse=True,
+    name="uniq_email_lower",
+    collation={"locale": "en", "strength": 2},
         )
     except DuplicateKeyError:
         logging.warning("uniq_email_lower index creation skipped: duplicate emails remain")
     # Unique phone (sparse so rows without a phone are allowed).
     try:
         await db.users.create_index(
-            "phone",
-            unique=True,
-            partialFilterExpression={"phone": {"$type": "string", "$ne": ""}},
-            name="uniq_phone",
+    "phone",
+    unique=True,
+    sparse=True,
+    name="uniq_phone",
         )
     except DuplicateKeyError:
         logging.warning("uniq_phone index creation skipped: duplicate phones remain")
