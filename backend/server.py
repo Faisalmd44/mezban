@@ -92,7 +92,7 @@ class GoogleLoginRequest(BaseModel):
     device_id: str
 
 
-class EmailOtpLoginRequest(BaseModel):
+class EmailPasswordLoginRequest(BaseModel):
     supabase_token: str
     email: str
     name: Optional[str] = None
@@ -427,9 +427,9 @@ async def google_login(req: GoogleLoginRequest):
     return {"token": token, "user": user_doc}
 
 
-# ---- Auth (Email OTP) ----
-@api.post("/auth/email-otp")
-async def email_otp_login(req: EmailOtpLoginRequest):
+# ---- Auth (Email + Password) ----
+@api.post("/auth/email-password")
+async def email_password_login(req: EmailPasswordLoginRequest):
     SUPABASE_URL = os.getenv("SUPABASE_URL", "")
     SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
     SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "")
