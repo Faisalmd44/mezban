@@ -6,14 +6,15 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
 };
 
-// Client-facing auth operations (signInWithOtp / verifyOtp) MUST use the anon
-// key, not the service role key. The service role key bypasses the auth flow
-// and suppresses email delivery — which is why "Send Code" never produced an
-// email. The anon key triggers Supabase Auth's normal email OTP delivery.
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
+const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 
-const client = createClient(SUPABASE_URL, ANON_KEY, {
+const anonClient = createClient(SUPABASE_URL, ANON_KEY, {
+  auth: { autoRefreshToken: false, persistSession: false },
+});
+
+const adminClient = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
   auth: { autoRefreshToken: false, persistSession: false },
 });
 
@@ -41,17 +42,29 @@ Deno.serve(async (req: Request) => {
     if (!email) return json({ error: "Please enter a valid email address" }, 400);
 
     if (action === "send") {
-      const { error: sendError } = await client.auth.signInWithOtp({
+      // signInWithOtp generates a 6-digit code and emails it via Supabase.
+      // No emailRedirectTo is passed — prevents magic link / localhost redirects.
+      // The Supabase email template (Magic Link) must use {{ .Token }}
+      // instead of {{ .ConfirmationURL }} for the email to show the code.
+      const { error: sendError } = await anonClient.auth.signInWithOtp({
         email,
         options: { shouldCreateUser: true },
       });
+
       if (sendError) {
-        // Rate-limit / user-exists errors still mean a code was sent previously.
         const msg = sendError.message.toLowerCase();
-        if (!msg.includes("rate") && !msg.includes("already")) {
-          return json({ error: sendError.message }, 400);
+        if (msg.includes("rate") || msg.includes("for security purposes") || msg.includes("already")) {
+          return json({
+            success: true,
+            message: "A verification code was already sent. Please wait before requesting another.",
+            expires_in: 300,
+            resend_in: 30,
+            cooldown_seconds: 30,
+          });
         }
+        return json({ error: sendError.message }, 400);
       }
+
       return json({
         success: true,
         message: "A 6-digit verification code was sent to your email.",
@@ -64,16 +77,23 @@ Deno.serve(async (req: Request) => {
       const code = String(body.code || "").trim();
       if (!/^\d{6}$/.test(code)) return json({ error: "Please enter the 6-digit code" }, 400);
 
-      const { data, error: verifyError } = await client.auth.verifyOtp({
+      const { data, error: verifyError } = await anonClient.auth.verifyOtp({
         email,
         token: code,
         type: "email",
       });
-      if (verifyError) {
-        return json({ error: verifyError.message }, 400);
-      }
+
+      if (verifyError) return json({ error: verifyError.message }, 400);
+
       const accessToken = data.session?.access_token;
-      if (!accessToken) return json({ error: "Verification succeeded but no session was created" }, 500);
+      if (!accessToken) return json({ error: "Verification succeeded but no session was created." }, 500);
+
+      if (data.user) {
+        try {
+          await adminClient.auth.admin.updateUserById(data.user.id, { email_confirm: true });
+        } catch { /* non-critical */ }
+      }
+
       return json({ success: true, email, supabase_token: accessToken });
     }
 
