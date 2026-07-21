@@ -365,12 +365,26 @@ async def merge_user_accounts(keep: dict, drop: dict) -> dict:
     if drop.get("wallet") and (keep.get("wallet") or 0.0) == 0.0:
         merged_fields["wallet"] = drop.get("wallet")
 
-    if merged_fields:
-        await db.users.update_one({"id": keep["id"]}, {"$set": merged_fields})
-        keep.update(merged_fields)
+    phone = merged_fields.pop("phone", None)
 
-    await db.orders.update_many({"user_id": drop["id"]}, {"$set": {"user_id": keep["id"]}})
-    await db.users.delete_one({"id": drop["id"]})
+if merged_fields:
+    await db.users.update_one({"id": keep["id"]}, {"$set": merged_fields})
+    keep.update(merged_fields)
+
+await db.orders.update_many(
+    {"user_id": drop["id"]},
+    {"$set": {"user_id": keep["id"]}}
+)
+
+await db.users.delete_one({"id": drop["id"]})
+
+if phone:
+    await db.users.update_one(
+        {"id": keep["id"]},
+        {"$set": {"phone": phone}}
+    ) 
+    keep["phone"] = phone
+    
     logging.info(f"Merged duplicate user {drop['id']} into {keep['id']} (email={keep.get('email')})")
     return keep
 
