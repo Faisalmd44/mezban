@@ -1,4 +1,13 @@
-import { View, Text, StyleSheet, ScrollView, Pressable, Linking, Alert } from "react-native";
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  Pressable,
+  Linking,
+  Alert,
+  TextInput,
+} from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -7,11 +16,36 @@ import { Image } from "expo-image";
 
 import { COLORS, SPACING, RADIUS, SHADOW } from "@/src/theme";
 import { useApp, clearToken } from "@/src/store";
+import { api } from "@/src/api";
+import { useState } from "react";
 
 export default function ProfileTab() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { user, setUser, clearCart } = useApp();
+  const [phone, setPhone] = useState(user?.phone || "");
+  const [saving, setSaving] = useState(false);
+
+const savePhone = async () => {
+  try {
+    setSaving(true);
+
+    const res = await api.post("/auth/mobile", {
+      phone,
+    });
+
+    setUser(res.data.user);
+
+    Alert.alert("Success", "Mobile number updated successfully");
+  } catch (e: any) {
+    Alert.alert(
+      "Error",
+      e?.response?.data?.detail || "Unable to update mobile number"
+    );
+  } finally {
+    setSaving(false);
+  }
+};
 
   const logout = async () => {
     Alert.alert("Logout", "Are you sure you want to logout?", [
@@ -30,10 +64,38 @@ export default function ProfileTab() {
         </View>
         <Text testID="profile-name" style={styles.name}>{user?.name || "Guest"}</Text>
         <Text style={styles.email}>{user?.email || ""}</Text>
-        <View style={styles.phonePill}>
-          <Ionicons name="call" size={12} color={COLORS.gold} />
-          <Text style={styles.phoneTxt}>+91 {user?.phone || "No number"}</Text>
-        </View>
+       <View style={{ paddingHorizontal: 20, width: "100%", marginTop: 10 }}>
+  <TextInput
+    value={phone}
+    onChangeText={setPhone}
+    keyboardType="phone-pad"
+    placeholder="Enter mobile number"
+    placeholderTextColor="#777"
+    style={{
+      backgroundColor: "#222",
+      color: "#fff",
+      borderRadius: 10,
+      padding: 12,
+      borderWidth: 1,
+      borderColor: "#444",
+    }}
+  />
+
+  <Pressable
+    onPress={savePhone}
+    style={{
+      backgroundColor: "#D4AF37",
+      padding: 12,
+      borderRadius: 10,
+      marginTop: 10,
+      alignItems: "center",
+    }}
+  >
+    <Text style={{ fontWeight: "bold", color: "#000" }}>
+      {saving ? "Saving..." : "Save Number"}
+    </Text>
+  </Pressable>
+</View>
       </LinearGradient>
 
       <Text style={styles.sectionTitle}>Account</Text>
