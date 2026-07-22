@@ -120,6 +120,7 @@ async function ensureChannel() {
     badge: true,
     vibration: true,
     bypassDnd: true,
+    sound: "new_order_alarm",
   });
   log("Notification channel ensured");
 }
@@ -148,7 +149,7 @@ async function startAlert(order: OrderSummary) {
         type: "repeat",
         sequence: [0, 1000, 500],
       },
-      fullScreenActionId: "mezban_accept_order",
+      fullScreenActionId: "open_order",
       pressAction: {
         id: "open_order",
         launchActivity: "default",
