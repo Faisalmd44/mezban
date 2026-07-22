@@ -11,6 +11,7 @@ import {
   loadRecentlyViewed, saveRecentlyViewed,
 } from "@/src/store";
 import { api } from "@/src/api";
+import { initAdminNotifications, cleanupAdminNotifications } from "@/src/services/AdminNotificationService";
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
@@ -50,6 +51,16 @@ export default function RootLayout() {
 
   useEffect(() => { saveCart(cart); }, [cart]);
   useEffect(() => { saveRecentlyViewed(recentlyViewed); }, [recentlyViewed]);
+
+  // Initialize admin notification service when an admin user is logged in.
+  useEffect(() => {
+    if (user?.is_admin) {
+      initAdminNotifications().catch(() => {});
+    }
+    return () => {
+      if (user?.is_admin) cleanupAdminNotifications();
+    };
+  }, [user?.is_admin]);
 
   const addToCart = useCallback((line: CartLine) => {
     setCart((prev) => {
