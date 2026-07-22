@@ -67,4 +67,6 @@ export const api = {
   adminToggleStock: (id: string, in_stock: boolean) => request(`/admin/menu/${id}`, { method: "PATCH", body: JSON.stringify({ in_stock }) }),
   adminListCoupons: () => request("/admin/coupons"),
   adminUpdateCoupon: (code: string, payload: any) => request(`/admin/coupons/${code}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  adminPendingOrders: () => request("/admin/orders/pending"),
+  registerFCMToken: (token: string) => request("/auth/fcm-token", { method: "POST", body: JSON.stringify({ token }) }),
 };

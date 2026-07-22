@@ -3,10 +3,13 @@ import { Ionicons } from "@expo/vector-icons";
 import { View, Text, StyleSheet, Platform } from "react-native";
 import { COLORS } from "@/src/theme";
 import { useApp } from "@/src/store";
+import { useAdminAlerts } from "@/src/hooks/use-admin-alerts";
 
 export default function TabsLayout() {
   const { cart } = useApp();
   const cartCount = cart.reduce((s, l) => s + l.quantity, 0);
+  const { pendingCount } = useAdminAlerts();
+
   return (
     <Tabs screenOptions={{
       headerShown: false,
@@ -23,7 +26,12 @@ export default function TabsLayout() {
           {cartCount > 0 ? (<View style={styles.badge}><Text style={styles.badgeText}>{cartCount}</Text></View>) : null}
         </View>
       )}} />
-      <Tabs.Screen name="orders" options={{ title: "Orders", tabBarIcon: ({ color, size }) => <Ionicons name="receipt" size={size} color={color} /> }} />
+      <Tabs.Screen name="orders" options={{ title: "Orders", tabBarIcon: ({ color, size }) => (
+        <View>
+          <Ionicons name="receipt" size={size} color={color} />
+          {pendingCount > 0 ? (<View style={styles.pendingBadge}><Text style={styles.pendingBadgeText}>{pendingCount}</Text></View>) : null}
+        </View>
+      )}} />
       <Tabs.Screen name="profile" options={{ title: "Profile", tabBarIcon: ({ color, size }) => <Ionicons name="person" size={size} color={color} /> }} />
     </Tabs>
   );
@@ -32,4 +40,6 @@ export default function TabsLayout() {
 const styles = StyleSheet.create({
   badge: { position: "absolute", right: -6, top: -3, backgroundColor: COLORS.gold, borderRadius: 999, minWidth: 16, height: 16, alignItems: "center", justifyContent: "center", paddingHorizontal: 4 },
   badgeText: { color: COLORS.black, fontSize: 9, fontWeight: "800" },
+  pendingBadge: { position: "absolute", right: -6, top: -3, backgroundColor: COLORS.error, borderRadius: 999, minWidth: 18, height: 18, alignItems: "center", justifyContent: "center", paddingHorizontal: 4, borderWidth: 2, borderColor: COLORS.black },
+  pendingBadgeText: { color: "#fff", fontSize: 10, fontWeight: "900" },
 });

@@ -14,7 +14,21 @@
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#000"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "googleServicesFile": "./google-services.json",
+      "useNextNotificationsApi": true,
+      "permissions": [
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.VIBRATE",
+        "android.permission.WAKE_LOCK",
+        "android.permission.RECEIVE_BOOT_COMPLETED",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.ACCESS_NOTIFICATION_POLICY",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.USE_FULL_SCREEN_INTENT",
+        "android.permission.SCHEDULE_EXACT_ALARM",
+        "android.permission.USE_EXACT_ALARM"
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -33,6 +47,33 @@
         }
       ],
       "expo-font",
+      [
+        "@react-native-firebase/app",
+        {
+          "android": {
+            "googleServicesFile": "./google-services.json"
+          }
+        }
+      ],
+      [
+        "@notifee/react-native",
+        {
+          "notificationChannels": [
+            {
+              "id": "mezban_new_orders",
+              "name": "New Order Alerts",
+              "description": "High-priority alerts when a new order arrives.",
+              "importance": 4,
+              "visibility": 1,
+              "vibration": true,
+              "badge": true,
+              "bypassDnd": true,
+              "sound": "new_order_alarm.wav"
+            }
+          ]
+        }
+      ],
+      "./plugins/withNewOrderAlarm",
       "./plugins/withDebuggableVariants"
     ],
     "experiments": {

@@ -25,3 +25,5 @@ python-multipart>=0.0.9
 jq>=1.6.0
 typer>=0.9.0
 razorpay==2.0.1
+# Firebase Cloud Messaging (FCM) server key for push notifications
+# No extra Python package needed — we use the HTTP v1 API via requests
