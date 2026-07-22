@@ -17,25 +17,27 @@ function withGradleMemoryFix(config) {
       props = fs.readFileSync(propsPath, "utf8");
     }
 
-    const additions = [];
+    // Override JVM args to 4GB heap (default is 2GB which can OOM on CI)
+    props = props.replace(
+      /org\.gradle\.jvmargs=.*/,
+      "org.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m"
+    );
     if (!props.includes("org.gradle.jvmargs")) {
-      additions.push("org.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m");
-    }
-    if (!props.includes("org.gradle.workers.max")) {
-      additions.push("org.gradle.workers.max=3");
-    }
-    if (!props.includes("org.gradle.caching=true")) {
-      additions.push("org.gradle.caching=true");
-    }
-    if (!props.includes("android.useAndroidX=true")) {
-      additions.push("android.useAndroidX=true");
+      props += "org.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m\n";
     }
 
-    if (additions.length > 0) {
-      const newProps = props + (props.endsWith("\n") ? "" : "\n") + additions.join("\n") + "\n";
-      fs.writeFileSync(propsPath, newProps);
-      console.log("[withGradleMemoryFix] Updated gradle.properties");
+    if (!props.includes("org.gradle.workers.max")) {
+      props += "org.gradle.workers.max=3\n";
     }
+    if (!props.includes("org.gradle.caching=true")) {
+      props += "org.gradle.caching=true\n";
+    }
+    if (!props.includes("android.useAndroidX=true")) {
+      props += "android.useAndroidX=true\n";
+    }
+
+    fs.writeFileSync(propsPath, props);
+    console.log("[withGradleMemoryFix] Updated gradle.properties");
 
     return cfg;
   });
