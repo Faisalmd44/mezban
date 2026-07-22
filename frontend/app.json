@@ -58,7 +58,8 @@
       "./plugins/withNewOrderAlarm",
       "./plugins/withNotifeeMavenRepo",
       "./plugins/withPluginManagementRepos",
-      "./plugins/withDebuggableVariants"
+      "./plugins/withDebuggableVariants",
+      "./plugins/withGradleMemoryFix"
     ],
     "experiments": {
       "tsdImports": true
