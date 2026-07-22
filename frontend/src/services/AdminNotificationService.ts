@@ -30,9 +30,11 @@ import notifee, {
   AndroidStyle,
   TriggerType,
   TimestampTrigger,
+  EventType,
+  type Event,
 } from "@notifee/react-native";
 
-import { api } from "@/src/api";
+import { api } from "@src/api";
 
 const TAG = "[AdminNotify]";
 const NOTIF_CHANNEL_ID = "mezban_new_orders";
@@ -58,6 +60,23 @@ let initialized = false;
 let appStateSubscription: { remove: () => void } | null = null;
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 let foregroundMessageUnsub: (() => void) | null = null;
+let notifeeEventUnsub: (() => void) | null = null;
+
+// Navigation callback — set by the root layout so the service can
+// deep-link to the order detail screen without importing expo-router
+// directly (which would break the background-message handler).
+let navigateToOrder: ((orderId: string) => void) | null = null;
+
+export function setOrderNavigator(fn: (orderId: string) => void) {
+  navigateToOrder = fn;
+}
+
+// Callback for handling Accept/Reject from the notification itself.
+let onActionPress: ((orderId: string, accept: boolean) => Promise<void>) | null = null;
+
+export function setActionHandler(fn: (orderId: string, accept: boolean) => Promise<void>) {
+  onActionPress = fn;
+}
 
 const listeners = new Set<Listener>();
 let pendingOrders: OrderSummary[] = [];
@@ -412,17 +431,77 @@ export async function initAdminNotifications() {
 
   appStateSubscription = AppState.addEventListener("change", onAppStateChange) as any;
 
+  // Handle notification opens (FCM side) — navigate to order detail.
   messaging()
     .getInitialNotification()
     .then((remoteMessage) => {
       if (remoteMessage?.data?.order_id) {
         log("App opened from notification, order:", remoteMessage.data.order_id);
+        navigateToOrder?.(remoteMessage.data.order_id as string);
       }
     });
 
   messaging().onNotificationOpenedApp((remoteMessage) => {
     if (remoteMessage?.data?.order_id) {
       log("Notification opened app, order:", remoteMessage.data.order_id);
+      navigateToOrder?.(remoteMessage.data.order_id as string);
+    }
+  });
+
+  // Handle Notifee events: ACTION_PRESS for Accept/Reject buttons,
+  // PRESS / DISMISS for navigation and cleanup.
+  notifeeEventUnsub = notifee.onForegroundEvent(async ({ type, detail }) => {
+    log("Notifee event:", type, detail?.pressAction?.id);
+
+    // Extract order id from notification id (format: "order_<id>").
+    const notifId = detail?.notification?.id || "";
+    const orderId = notifId.startsWith("order_") ? notifId.slice(6) : "";
+
+    if (type === EventType.ACTION_PRESS) {
+      const actionId = detail?.pressAction?.id;
+
+      if (actionId === "accept_order" && orderId) {
+        await stopAlert(orderId);
+        if (onActionPress) {
+          await onActionPress(orderId, true).catch((e) => log("Accept action failed:", e?.message));
+        }
+        navigateToOrder?.(orderId);
+      } else if (actionId === "reject_order" && orderId) {
+        await stopAlert(orderId);
+        if (onActionPress) {
+          await onActionPress(orderId, false).catch((e) => log("Reject action failed:", e?.message));
+        }
+      } else if (actionId === "open_order" && orderId) {
+        navigateToOrder?.(orderId);
+      }
+    } else if (type === EventType.PRESS) {
+      if (orderId) navigateToOrder?.(orderId);
+    } else if (type === EventType.DISMISSED) {
+      if (orderId) {
+        activeAlertOrderIds.delete(orderId);
+      }
+    }
+  });
+
+  // Also handle events when the app is in background/killed so that
+  // Accept/Reject from the notification still processes the order.
+  notifee.onBackgroundEvent(async ({ type, detail }) => {
+    const notifId = detail?.notification?.id || "";
+    const orderId = notifId.startsWith("order_") ? notifId.slice(6) : "";
+
+    if (type === EventType.ACTION_PRESS) {
+      const actionId = detail?.pressAction?.id;
+      if (actionId === "accept_order" && orderId) {
+        if (onActionPress) {
+          await onActionPress(orderId, true).catch((e) => log("BG accept failed:", e?.message));
+        }
+        await stopAlert(orderId);
+      } else if (actionId === "reject_order" && orderId) {
+        if (onActionPress) {
+          await onActionPress(orderId, false).catch((e) => log("BG reject failed:", e?.message));
+        }
+        await stopAlert(orderId);
+      }
     }
   });
 
@@ -437,6 +516,10 @@ export function cleanupAdminNotifications() {
   if (foregroundMessageUnsub) {
     foregroundMessageUnsub();
     foregroundMessageUnsub = null;
+  }
+  if (notifeeEventUnsub) {
+    notifeeEventUnsub();
+    notifeeEventUnsub = null;
   }
   stopPolling();
   initialized = false;

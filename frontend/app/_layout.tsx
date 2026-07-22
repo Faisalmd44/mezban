@@ -11,7 +11,13 @@ import {
   loadRecentlyViewed, saveRecentlyViewed,
 } from "@/src/store";
 import { api } from "@/src/api";
-import { initAdminNotifications, cleanupAdminNotifications } from "@/src/services/AdminNotificationService";
+import {
+  initAdminNotifications,
+  cleanupAdminNotifications,
+  setOrderNavigator,
+  setActionHandler,
+  handleOrderResolved,
+} from "@/src/services/AdminNotificationService";
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
@@ -55,6 +61,17 @@ export default function RootLayout() {
   // Initialize admin notification service when an admin user is logged in.
   useEffect(() => {
     if (user?.is_admin) {
+      // Wire up deep-link navigation: tapping a notification opens the
+      // specific order detail screen.
+      setOrderNavigator((orderId: string) => {
+        router.push(`/admin/${orderId}`);
+      });
+      // Wire up Accept/Reject from the notification action buttons.
+      setActionHandler(async (orderId: string, accept: boolean) => {
+        const newStatus = accept ? "preparing" : "cancelled";
+        await api.adminUpdateStatus(orderId, newStatus);
+        await handleOrderResolved(orderId);
+      });
       initAdminNotifications().catch(() => {});
     }
     return () => {
