@@ -55,24 +55,6 @@
           }
         }
       ],
-      [
-        "@notifee/react-native",
-        {
-          "notificationChannels": [
-            {
-              "id": "mezban_new_orders",
-              "name": "New Order Alerts",
-              "description": "High-priority alerts when a new order arrives.",
-              "importance": 4,
-              "visibility": 1,
-              "vibration": true,
-              "badge": true,
-              "bypassDnd": true,
-              "sound": "new_order_alarm.wav"
-            }
-          ]
-        }
-      ],
       "./plugins/withNewOrderAlarm",
       "./plugins/withDebuggableVariants"
     ],
