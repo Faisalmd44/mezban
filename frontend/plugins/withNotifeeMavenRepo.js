@@ -12,17 +12,19 @@ function withNotifeeMavenRepo(config) {
   return withProjectBuildGradle(config, (cfg) => {
     if (cfg.modResults.language !== "groovy") return cfg;
 
-    const block = `
-    // --- withNotifeeMavenRepo ---
-    allprojects {
-      repositories {
-        maven {
-          url "${'$'}{projectDir}/../node_modules/@notifee/react-native/android/libs"
-        }
-      }
-    }
-    // --- end withNotifeeMavenRepo ---
-`;
+    const block = [
+      "",
+      "    // --- withNotifeeMavenRepo ---",
+      "    allprojects {",
+      "      repositories {",
+      "        maven {",
+      '          url "${rootDir}/../node_modules/@notifee/react-native/android/libs"',
+      "        }",
+      "      }",
+      "    }",
+      "    // --- end withNotifeeMavenRepo ---",
+      "",
+    ].join("\n");
 
     const content = cfg.modResults.contents;
     if (content.includes("withNotifeeMavenRepo")) return cfg;
