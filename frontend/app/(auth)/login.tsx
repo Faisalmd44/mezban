@@ -34,9 +34,9 @@ export default function LoginScreen() {
   const { setUser } = useApp();
   const insets = useSafeAreaInsets();
 
-  const { signIn: googleSignIn, loading: googleLoading } = useGoogleAuth();
+  const { signIn: googleSignIn, loading: googleLoading, error: googleError } = useGoogleAuth();
   const { signIn, signUp, resetPassword, loading: authLoading, error: authError } = useEmailAuth();
-  const displayError = error || authError;
+  const displayError = error || authError || googleError;
 
   const finishLogin = async (res: { token: string; user: any }) => {
     await saveToken(res.token);
@@ -56,9 +56,11 @@ export default function LoginScreen() {
     setLoading(true);
     try {
       const device_id = await getDeviceId();
-      const res = await api.googleLogin({
-        id_token: googleUser.id_token, email: googleUser.email, name: googleUser.name,
-        picture: googleUser.picture, google_id: googleUser.google_id, device_id,
+      const res = await api.emailPasswordLogin({
+        supabase_token: googleUser.supabase_token,
+        email: googleUser.email,
+        name: googleUser.name,
+        device_id,
       });
       await finishLogin(res);
     } catch (e: any) { setError(e?.message || "Login failed"); }

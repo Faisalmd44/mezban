@@ -1,55 +1,92 @@
 import { useState, useCallback } from "react";
 import * as WebBrowser from "expo-web-browser";
-import * as Google from "expo-auth-session/providers/google";
+import * as Linking from "expo-linking";
 import { makeRedirectUri } from "expo-auth-session";
-
-const GOOGLE_WEB_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || "";
+import { supabase } from "@/src/lib/supabase";
 
 WebBrowser.maybeCompleteAuthSession();
 
+const REDIRECT_URI = makeRedirectUri({
+  scheme: "mezbaan",
+  path: "auth/callback",
+});
+
 export type GoogleUser = {
-  id_token: string; email: string; name: string; picture?: string; google_id: string;
+  supabase_token: string;
+  email: string;
+  name: string;
+  picture?: string;
 };
 
 export function useGoogleAuth() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const [request, response, promptAsync] = Google.useAuthRequest({
-    clientId: GOOGLE_WEB_CLIENT_ID,
-    redirectUri: makeRedirectUri({}),
-    scopes: ["openid", "profile", "email"],
-    responseType: "id_token",
-  });
-
   const signIn = useCallback(async (): Promise<GoogleUser | null> => {
     setError("");
-    if (!GOOGLE_WEB_CLIENT_ID) {
-      setError("Google Sign-In is not configured. Set EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID.");
-      return null;
-    }
     setLoading(true);
     try {
-      const result = await promptAsync();
-      if (result?.type !== "success" || !result.params) {
-        if (result?.type === "dismiss") return null;
-        setError(result?.type === "error" ? (result.error?.message || "Google sign-in failed") : "Sign-in cancelled");
+      const { data, error: sbError } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo: REDIRECT_URI,
+          skipBrowserRedirect: true,
+        },
+      });
+
+      if (sbError) {
+        setError(sbError.message);
         return null;
       }
-      const id_token = result.params.id_token;
-      if (!id_token) { setError("No id_token returned from Google"); return null; }
-      const payloadB64 = id_token.split(".")[1];
-      const payloadJson = JSON.parse(
-        decodeURIComponent(
-          Array.from(atob(payloadB64)).map((c) => "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2)).join("")
-        )
-      );
+      if (!data?.url) {
+        setError("No OAuth URL returned from Supabase");
+        return null;
+      }
+
+      const result = await WebBrowser.openAuthSessionAsync(data.url, REDIRECT_URI);
+
+      if (result?.type !== "success") {
+        if (result?.type === "dismiss" || result?.type === "cancel") return null;
+        setError("Google sign-in was cancelled or failed");
+        return null;
+      }
+
+      const url = result.url;
+      let accessToken: string | null = null;
+
+      const parsed = Linking.parse(url);
+      if (parsed.queryParams?.access_token) {
+        accessToken = parsed.queryParams.access_token as string;
+      } else {
+        try {
+          const hashParams = new URLSearchParams(new URL(url).hash.replace(/^#/, ""));
+          accessToken = hashParams.get("access_token");
+        } catch {
+          // URL parsing failed, try fallback below
+        }
+      }
+
+      if (!accessToken) {
+        const { data: sessData, error: sessError } = await supabase.auth.getSession();
+        if (sessError || !sessData.session) {
+          setError("Failed to retrieve session after Google sign-in");
+          return null;
+        }
+        accessToken = sessData.session.access_token;
+      }
+
+      const { data: userData, error: userError } = await supabase.auth.getUser(accessToken);
+      if (userError || !userData.user) {
+        setError("Failed to get user info from Supabase");
+        return null;
+      }
+
+      const user = userData.user;
       return {
-        id_token,
-        email: payloadJson.email || "",
-        name: payloadJson.name || payloadJson.email?.split("@")[0] || "Guest",
-        picture: payloadJson.picture,
-        google_id: payloadJson.sub,
+        supabase_token: accessToken,
+        email: user.email || "",
+        name: user.user_metadata?.full_name || user.user_metadata?.name || user.email?.split("@")[0] || "Guest",
+        picture: user.user_metadata?.avatar_url || user.user_metadata?.picture,
       };
     } catch (e: any) {
       setError(e?.message || "Google sign-in failed");
@@ -57,7 +94,7 @@ export function useGoogleAuth() {
     } finally {
       setLoading(false);
     }
-  }, [promptAsync]);
+  }, []);
 
-  return { signIn, loading, error, request, response };
+  return { signIn, loading, error };
 }
