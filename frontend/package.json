@@ -5,6 +5,7 @@
   "scripts": {
     "preinstall": "./scripts/check-pkg.js",
     "start": "expo start",
+    "prebuild": "node ./scripts/generate-alarm-sound.js && expo prebuild",
     "reset-project": "node ./scripts/reset-project.js",
     "android": "expo run:android",
     "ios": "expo run:ios",
