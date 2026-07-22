@@ -4,6 +4,7 @@
   "version": "1.0.0",
   "scripts": {
     "preinstall": "./scripts/check-pkg.js",
+    "postinstall": "node ./scripts/generate-alarm-sound.js",
     "start": "expo start",
     "prebuild": "node ./scripts/generate-alarm-sound.js && expo prebuild",
     "reset-project": "node ./scripts/reset-project.js",
