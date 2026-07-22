@@ -23,6 +23,9 @@ import requests as http_requests
 from pymongo import ASCENDING, DESCENDING
 from pymongo.errors import DuplicateKeyError
 
+# FCM (Firebase Cloud Messaging) server key for push notifications
+FCM_SERVER_KEY = os.environ.get("FCM_SERVER_KEY", "")
+
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
@@ -37,7 +40,7 @@ api = APIRouter(prefix="/api")
 FREE_DELIVERY_THRESHOLD = 250
 DELIVERY_FEE = 30
 
-STATUS_FLOW = ["received", "preparing", "packed", "out_for_delivery", "delivered"]
+STATUS_FLOW = ["received", "preparing", "packed", "out_for_delivery", "delivered", "cancelled"]
 
 # ----- Razorpay client (lazy) -----
 RAZORPAY_KEY_ID = os.environ.get("RAZORPAY_KEY_ID", "")
@@ -49,13 +52,6 @@ GOOGLE_TOKEN_SECRET = os.environ.get("GOOGLE_TOKEN_SECRET", "mezbaan-google-secr
 
 # ---------------------------------------------------------------------------
 # ADMIN ACCESS CONTROL
-# ---------------------------------------------------------------------------
-# Only Google accounts whose email is in this list can see the Admin Panel,
-# open admin routes, call admin APIs, or access any admin feature.
-# To grant/revoke admin access later, simply edit this list and redeploy —
-# no application code changes required.
-#
-# Emails are matched case-insensitively.
 # ---------------------------------------------------------------------------
 ADMIN_EMAILS = [
     "Faisalmd44@gmail.com",
@@ -166,14 +162,14 @@ class PlaceOrderRequest(BaseModel):
     address: str
     phone: str
     name: str
-    payment_method: str  # "cod" | "upi" | "razorpay"
+    payment_method: str
     coupon_code: Optional[str] = None
     notes: Optional[str] = None
     device_id: Optional[str] = None
 
 
 class RazorpayVerifyRequest(BaseModel):
-    order_id: str  # our internal Mezbaan order id
+    order_id: str
     razorpay_order_id: str
     razorpay_payment_id: str
     razorpay_signature: str
@@ -189,7 +185,7 @@ class Coupon(BaseModel):
     discount_percent: int
     min_order: float = 0
     active: bool = True
-    expiry: Optional[str] = None  # ISO date string
+    expiry: Optional[str] = None
     first_order_only: bool = False
 
 
@@ -202,18 +198,102 @@ class CouponUpdate(BaseModel):
     expiry: Optional[str] = None
 
 
+class FCMTokenRequest(BaseModel):
+    token: str
+
+
+# ----- FCM push notification helper -----
+async def send_fcm_new_order(order: dict):
+    if not FCM_SERVER_KEY:
+        logging.info("FCM_SERVER_KEY not set, skipping push notification")
+        return
+    admins = db.users.find({"is_admin": True, "fcm_token": {"$exists": True, "$ne": None, "$ne": ""}}, {"fcm_token": 1})
+    tokens = [a["fcm_token"] async for a in admins if a.get("fcm_token")]
+    if not tokens:
+        logging.info("No admin FCM tokens registered, skipping push")
+        return
+    items_summary = ", ".join(f"{i['quantity']}x {i['name']}" for i in order.get("items", []))
+    payload = {
+        "registration_ids": tokens,
+        "priority": "high",
+        "android": {
+            "priority": "high",
+            "notification": {
+                "channel_id": "mezban_new_orders",
+                "visibility": "public",
+                "priority": "high",
+                "default_vibrate_timings": False,
+                "default_sound": False,
+                "sound": "new_order_alarm",
+                "ongoing": True,
+            },
+        },
+        "data": {
+            "type": "new_order",
+            "order_id": order["id"],
+            "order_no": order.get("order_no", ""),
+            "user_name": order.get("user_name", ""),
+            "user_phone": order.get("user_phone", ""),
+            "total": str(order.get("total", 0)),
+            "status": order.get("status", "received"),
+            "items": items_summary,
+        },
+        "notification": {
+            "title": f"New Order — #{order.get('order_no', '')}",
+            "body": f"{order.get('user_name', 'Customer')} • ₹{order.get('total', 0):.0f}",
+            "android_channel_id": "mezban_new_orders",
+            "tag": f"order_{order['id']}",
+        },
+    }
+    try:
+        resp = http_requests.post(
+            "https://fcm.googleapis.com/fcm/send",
+            json=payload,
+            headers={"Authorization": f"key={FCM_SERVER_KEY}", "Content-Type": "application/json"},
+            timeout=5,
+        )
+        if resp.status_code != 200:
+            logging.warning(f"FCM push failed: {resp.status_code} {resp.text[:200]}")
+        else:
+            logging.info(f"FCM push sent to {len(tokens)} admin device(s) for order {order['id']}")
+    except Exception as e:
+        logging.warning(f"FCM push error: {e}")
+
+
+async def send_fcm_order_resolved(order_id: str, status: str):
+    if not FCM_SERVER_KEY:
+        return
+    admins = db.users.find({"is_admin": True, "fcm_token": {"$exists": True, "$ne": None, "$ne": ""}}, {"fcm_token": 1})
+    tokens = [a["fcm_token"] async for a in admins if a.get("fcm_token")]
+    if not tokens:
+        return
+    payload = {
+        "registration_ids": tokens,
+        "priority": "high",
+        "data": {"type": "order_status", "order_id": order_id, "status": status},
+    }
+    try:
+        http_requests.post(
+            "https://fcm.googleapis.com/fcm/send",
+            json=payload,
+            headers={"Authorization": f"key={FCM_SERVER_KEY}", "Content-Type": "application/json"},
+            timeout=5,
+        )
+    except Exception:
+        pass
+
+
 # ----- Auth helpers -----
 async def get_current_user(authorization: Optional[str] = Header(None)) -> Dict[str, Any]:
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Missing token")
     token = authorization.split(" ", 1)[1]
-    # Support both JWT (new Google auth) and legacy raw-uuid tokens.
     user_id = None
     try:
         payload = pyjwt.decode(token, GOOGLE_TOKEN_SECRET, algorithms=["HS256"])
         user_id = payload.get("sub")
     except pyjwt.PyJWTError:
-        user_id = token  # legacy token format
+        user_id = token
     if not user_id:
         raise HTTPException(status_code=401, detail="Invalid token")
     user = await db.users.find_one({"id": user_id}, {"_id": 0})
@@ -223,9 +303,6 @@ async def get_current_user(authorization: Optional[str] = Header(None)) -> Dict[
 
 
 async def require_admin(current_user: dict = Depends(get_current_user)) -> bool:
-    """Admin access is granted solely via Google account email in ADMIN_EMAILS.
-    The old X-Admin-Passcode header is no longer accepted — this prevents any
-    non-admin user from calling admin APIs even if they knew the passcode."""
     if not is_admin_email(current_user.get("email")):
         raise HTTPException(status_code=403, detail="Admin access restricted to authorized accounts")
     return True
@@ -233,122 +310,51 @@ async def require_admin(current_user: dict = Depends(get_current_user)) -> bool:
 
 # ----- Seed Menu -----
 SEED_MENU = [
-    # Burgers
-    {"name": "Crispy Veg Patty Burger", "category": "Burgers", "price": 69, "veg": True,
-     "description": "Crunchy veg patty with creamy mayo & crisp lettuce.",
-     "image": "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=600", "popular": True},
-    {"name": "Paneer Crunch Burger", "category": "Burgers", "price": 139, "veg": True,
-     "description": "Spiced paneer patty, crunch coating, signature sauce.",
-     "image": "https://images.unsplash.com/photo-1571091718767-18b5b1457add?w=600"},
-    {"name": "Classic Chicken Burger", "category": "Burgers", "price": 129, "veg": False,
-     "description": "Tender chicken patty with classic mayo & onions.",
-     "image": "https://images.unsplash.com/photo-1606131731446-5568d87113aa?w=600"},
-    {"name": "Chicken Zinger Burger", "category": "Burgers", "price": 149, "veg": False,
-     "description": "Fiery zinger chicken with peri-peri sauce.",
-     "image": "https://images.unsplash.com/photo-1561758033-d89a9ad46330?w=600", "popular": True},
-    # Pizza
-    {"name": "Veg Classic Corn & Cheese", "category": "Pizza", "price": 149, "veg": True,
-     "description": "8-inch sweet corn & double cheese.",
-     "image": "https://images.unsplash.com/photo-1574071318508-1cdbab80d002?w=600"},
-    {"name": "Farmhouse Delight", "category": "Pizza", "price": 169, "veg": True,
-     "description": "Onion, capsicum, tomato, mushroom & mozzarella.",
-     "image": "https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?w=600"},
-    {"name": "Mezbaan Royal Paneer", "category": "Pizza", "price": 189, "veg": True,
-     "description": "Tandoori paneer with creamy white sauce.",
-     "image": "https://images.unsplash.com/photo-1513104890138-7c749659a591?w=600", "popular": True},
-    {"name": "Mezbaan Chicken Supreme", "category": "Pizza", "price": 249, "veg": False,
-     "description": "Loaded chicken, jalapeño & extra cheese.",
-     "image": "https://images.unsplash.com/photo-1604382354936-07c5d9983bd3?w=600"},
-    {"name": "Mezbaan Loaded Chicken Feast", "category": "Pizza", "price": 299, "veg": False,
-     "description": "Triple chicken toppings, BBQ glaze, mozzarella.",
-     "image": "https://images.unsplash.com/photo-1593504049359-74330189a345?w=600", "popular": True},
-    # Pasta
-    {"name": "Creamy White Sauce Pasta", "category": "Pasta", "price": 129, "veg": True,
-     "description": "Penne in creamy alfredo sauce.",
-     "image": "https://images.unsplash.com/photo-1621996346565-e3dbc646d9a9?w=600"},
-    {"name": "Classic Red Sauce Pasta", "category": "Pasta", "price": 129, "veg": True,
-     "description": "Tangy tomato basil pasta.",
-     "image": "https://images.unsplash.com/photo-1473093295043-cdd812d0e601?w=600"},
-    {"name": "Creamy Chicken White Sauce Pasta", "category": "Pasta", "price": 179, "veg": False,
-     "description": "Alfredo with grilled chicken chunks.",
-     "image": "https://images.unsplash.com/photo-1645112411341-6c4fd023714a?w=600"},
-    {"name": "Creamy Chicken Red Sauce Pasta", "category": "Pasta", "price": 179, "veg": False,
-     "description": "Spicy arrabiata with grilled chicken.",
-     "image": "https://images.unsplash.com/photo-1563379926898-05f4575a45d8?w=600"},
-    # Fries
-    {"name": "French Fries", "category": "Fries", "price": 69, "veg": True,
-     "description": "Golden crispy salted fries.",
-     "image": "https://images.unsplash.com/photo-1573080496219-bb080dd4f877?w=600"},
-    {"name": "Peri Peri Fries", "category": "Fries", "price": 89, "veg": True,
-     "description": "Fries tossed in peri peri spice.",
-     "image": "https://images.unsplash.com/photo-1639024471283-03518883512d?w=600", "popular": True},
-    {"name": "Loaded Fries", "category": "Fries", "price": 130, "veg": True,
-     "description": "Cheese, jalapeño & herbs over crispy fries.",
-     "image": "https://images.unsplash.com/photo-1585109649139-366815a0d713?w=600"},
-    # Wraps
-    {"name": "Chicken Wrap", "category": "Wraps", "price": 69, "veg": False,
-     "description": "Grilled chicken in soft tortilla.",
-     "image": "https://images.unsplash.com/photo-1626700051175-6818013e1d4f?w=600"},
-    {"name": "Chicken Fry Wrap", "category": "Wraps", "price": 89, "veg": False,
-     "description": "Crispy fried chicken wrap with sauce.",
-     "image": "https://images.unsplash.com/photo-1565299585323-38d6b0865b47?w=600"},
-    # Nuggets
-    {"name": "Chicken Cheese Burst Nuggets", "category": "Nuggets", "price": 109, "veg": False,
-     "description": "Cheesy molten core chicken nuggets.",
-     "image": "https://images.unsplash.com/photo-1562967914-608f82629710?w=600",
-     "variants": [{"name": "6 Pieces", "price": 109}, {"name": "9 Pieces", "price": 149}, {"name": "12 Pieces", "price": 189}]},
-    # Combos
-    {"name": "Veg Burger + Fries + Drink", "category": "Combos", "price": 99, "veg": True,
-     "description": "Veg burger, fries & a chilled drink.",
-     "image": "https://images.unsplash.com/photo-1561758033-d89a9ad46330?w=600", "popular": True},
-    {"name": "Chicken Patty Burger + Fries + Drink", "category": "Combos", "price": 149, "veg": False,
-     "description": "Chicken burger combo with fries & drink.",
-     "image": "https://images.unsplash.com/photo-1550317138-10000687a72b?w=600"},
-    {"name": "Chicken Zinger Burger + Fries + Drink", "category": "Combos", "price": 199, "veg": False,
-     "description": "Zinger burger combo - the heat package.",
-     "image": "https://images.unsplash.com/photo-1607013251379-e6eecfffe234?w=600"},
-    {"name": "6 Nuggets + Fries + Drink", "category": "Combos", "price": 149, "veg": False,
-     "description": "Cheese burst nuggets combo.",
-     "image": "https://images.unsplash.com/photo-1562967914-608f82629710?w=600"},
+    {"name": "Crispy Veg Patty Burger", "category": "Burgers", "price": 69, "veg": True, "description": "Crunchy veg patty with creamy mayo & crisp lettuce.", "image": "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=600", "popular": True},
+    {"name": "Paneer Crunch Burger", "category": "Burgers", "price": 139, "veg": True, "description": "Spiced paneer patty, crunch coating, signature sauce.", "image": "https://images.unsplash.com/photo-1571091718767-18b5b1457add?w=600"},
+    {"name": "Classic Chicken Burger", "category": "Burgers", "price": 129, "veg": False, "description": "Tender chicken patty with classic mayo & onions.", "image": "https://images.unsplash.com/photo-1606131731446-5568d87113aa?w=600"},
+    {"name": "Chicken Zinger Burger", "category": "Burgers", "price": 149, "veg": False, "description": "Fiery zinger chicken with peri-peri sauce.", "image": "https://images.unsplash.com/photo-1561758033-d89a9ad46330?w=600", "popular": True},
+    {"name": "Veg Classic Corn & Cheese", "category": "Pizza", "price": 149, "veg": True, "description": "8-inch sweet corn & double cheese.", "image": "https://images.unsplash.com/photo-1574071318508-1cdbab80d002?w=600"},
+    {"name": "Farmhouse Delight", "category": "Pizza", "price": 169, "veg": True, "description": "Onion, capsicum, tomato, mushroom & mozzarella.", "image": "https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?w=600"},
+    {"name": "Mezbaan Royal Paneer", "category": "Pizza", "price": 189, "veg": True, "description": "Tandoori paneer with creamy white sauce.", "image": "https://images.unsplash.com/photo-1513104890138-7c749659a591?w=600", "popular": True},
+    {"name": "Mezbaan Chicken Supreme", "category": "Pizza", "price": 249, "veg": False, "description": "Loaded chicken, jalapeño & extra cheese.", "image": "https://images.unsplash.com/photo-1604382354936-07c5d9983bd3?w=600"},
+    {"name": "Mezbaan Loaded Chicken Feast", "category": "Pizza", "price": 299, "veg": False, "description": "Triple chicken toppings, BBQ glaze, mozzarella.", "image": "https://images.unsplash.com/photo-1593504049359-74330189a345?w=600", "popular": True},
+    {"name": "Creamy White Sauce Pasta", "category": "Pasta", "price": 129, "veg": True, "description": "Penne in creamy alfredo sauce.", "image": "https://images.unsplash.com/photo-1621996346565-e3dbc646d9a9?w=600"},
+    {"name": "Classic Red Sauce Pasta", "category": "Pasta", "price": 129, "veg": True, "description": "Tangy tomato basil pasta.", "image": "https://images.unsplash.com/photo-1473093295043-cdd812d0e601?w=600"},
+    {"name": "Creamy Chicken White Sauce Pasta", "category": "Pasta", "price": 179, "veg": False, "description": "Alfredo with grilled chicken chunks.", "image": "https://images.unsplash.com/photo-1645112411341-6c4fd023714a?w=600"},
+    {"name": "Creamy Chicken Red Sauce Pasta", "category": "Pasta", "price": 179, "veg": False, "description": "Spicy arrabiata with grilled chicken.", "image": "https://images.unsplash.com/photo-1563379926898-05f4575a45d8?w=600"},
+    {"name": "French Fries", "category": "Fries", "price": 69, "veg": True, "description": "Golden crispy salted fries.", "image": "https://images.unsplash.com/photo-1573080496219-bb080dd4f877?w=600"},
+    {"name": "Peri Peri Fries", "category": "Fries", "price": 89, "veg": True, "description": "Fries tossed in peri peri spice.", "image": "https://images.unsplash.com/photo-1639024471283-03518883512d?w=600", "popular": True},
+    {"name": "Loaded Fries", "category": "Fries", "price": 130, "veg": True, "description": "Cheese, jalapeño & herbs over crispy fries.", "image": "https://images.unsplash.com/photo-1585109649139-366815a0d713?w=600"},
+    {"name": "Chicken Wrap", "category": "Wraps", "price": 69, "veg": False, "description": "Grilled chicken in soft tortilla.", "image": "https://images.unsplash.com/photo-1626700051175-6818013e1d4f?w=600"},
+    {"name": "Chicken Fry Wrap", "category": "Wraps", "price": 89, "veg": False, "description": "Crispy fried chicken wrap with sauce.", "image": "https://images.unsplash.com/photo-1565299585323-38d6b0865b47?w=600"},
+    {"name": "Chicken Cheese Burst Nuggets", "category": "Nuggets", "price": 109, "veg": False, "description": "Cheesy molten core chicken nuggets.", "image": "https://images.unsplash.com/photo-1562967914-608f82629710?w=600", "variants": [{"name": "6 Pieces", "price": 109}, {"name": "9 Pieces", "price": 149}, {"name": "12 Pieces", "price": 189}]},
+    {"name": "Veg Burger + Fries + Drink", "category": "Combos", "price": 99, "veg": True, "description": "Veg burger, fries & a chilled drink.", "image": "https://images.unsplash.com/photo-1561758033-d89a9ad46330?w=600", "popular": True},
+    {"name": "Chicken Patty Burger + Fries + Drink", "category": "Combos", "price": 149, "veg": False, "description": "Chicken burger combo with fries & drink.", "image": "https://images.unsplash.com/photo-1550317138-10000687a72b?w=600"},
+    {"name": "Chicken Zinger Burger + Fries + Drink", "category": "Combos", "price": 199, "veg": False, "description": "Zinger burger combo - the heat package.", "image": "https://images.unsplash.com/photo-1607013251379-e6eecfffe234?w=600"},
+    {"name": "6 Nuggets + Fries + Drink", "category": "Combos", "price": 149, "veg": False, "description": "Cheese burst nuggets combo.", "image": "https://images.unsplash.com/photo-1562967914-608f82629710?w=600"},
 ]
 
 SEED_COUPONS = [
-    {
-        "code": "WELCOME15",
-        "description": "15% OFF on your first order above ₹499",
-        "discount_percent": 15,
-        "min_order": 499,
-        "active": True,
-        "first_order_only": True,
-    }
+    {"code": "WELCOME15", "description": "15% OFF on your first order above ₹499", "discount_percent": 15, "min_order": 499, "active": True, "first_order_only": True}
 ]
 
 
 def _merge_field(keep: Any, drop: Any) -> Any:
-    """Pick the non-empty value from two candidate fields during account merge."""
     if keep not in (None, "", [], {}):
         return keep
     return drop
 
 
 async def merge_user_accounts(keep: dict, drop: dict) -> dict:
-    """Merge `drop` into `keep` (same email / same user, stale duplicate).
-
-    The kept record retains its identity (`id`) so existing JWTs keep working.
-    Wishlist, addresses and recently-viewed are unioned; the first non-empty
-    phone/name/picture/google_id wins. Orders are repointed to the kept id.
-    """
     merged_fields: Dict[str, Any] = {}
-
     for key in ("name", "phone", "picture", "google_id"):
         val = _merge_field(keep.get(key), drop.get(key))
         if val != keep.get(key):
             merged_fields[key] = val
-
     for key in ("wishlist", "addresses", "recently_viewed"):
         kept_list = keep.get(key, []) or []
         drop_list = drop.get(key, []) or []
-
         if key == "addresses":
             seen = {a.get("id") for a in kept_list if isinstance(a, dict)}
             combined = list(kept_list)
@@ -361,57 +367,25 @@ async def merge_user_accounts(keep: dict, drop: dict) -> dict:
             for x in drop_list:
                 if x not in combined:
                     combined.append(x)
-
         if len(combined) > len(kept_list):
             merged_fields[key] = combined
-
     if drop.get("wallet") and (keep.get("wallet") or 0.0) == 0.0:
         merged_fields["wallet"] = drop.get("wallet")
-
     phone = merged_fields.pop("phone", None)
-
     if merged_fields:
-        await db.users.update_one(
-            {"id": keep["id"]},
-            {"$set": merged_fields}
-        )
+        await db.users.update_one({"id": keep["id"]}, {"$set": merged_fields})
         keep.update(merged_fields)
-
-    await db.orders.update_many(
-        {"user_id": drop["id"]},
-        {"$set": {"user_id": keep["id"]}}
-    )
-
+    await db.orders.update_many({"user_id": drop["id"]}, {"$set": {"user_id": keep["id"]}})
     await db.users.delete_one({"id": drop["id"]})
-
     if phone:
-        await db.users.update_one(
-            {"id": keep["id"]},
-            {"$set": {"phone": phone}}
-        )
+        await db.users.update_one({"id": keep["id"]}, {"$set": {"phone": phone}})
         keep["phone"] = phone
-
-    logging.info(
-        f"Merged duplicate user {drop['id']} into {keep['id']} (email={keep.get('email')})"
-    )
-
+    logging.info(f"Merged duplicate user {drop['id']} into {keep['id']} (email={keep.get('email')})")
     return keep
 
 
 async def migrate_duplicate_accounts():
-    """Collapse stale duplicate user records produced by prior auth attempts.
-
-    Two sources of duplicates exist in this data set:
-      1. Same email created more than once (old phone-OTP flow inserted a row
-         per verification attempt before email linking existed).
-      2. Same phone on a record with no/empty email plus a newer email-backed
-         record — these are the same physical user.
-    We keep the oldest record per email and re-point its orders, then collapse
-    phone-only duplicates into the matching email record. Safe to re-run.
-    """
     collapsed = 0
-
-    # 1) Dedup by email (case-insensitive, ignore empty emails).
     pipeline = [
         {"$match": {"email": {"$exists": True, "$ne": None, "$ne": ""}}},
         {"$group": {"_id": {"$toLower": "$email"}, "ids": {"$push": "$id"}, "count": {"$sum": 1}}},
@@ -424,9 +398,6 @@ async def migrate_duplicate_accounts():
         for drop in docs[1:]:
             keep = await merge_user_accounts(keep, drop)
             collapsed += 1
-
-    # 2) Collapse legacy phone-only records into the email-backed record for the
-    #    same phone, when exactly one email record holds that phone.
     phone_pipeline = [
         {"$match": {"phone": {"$exists": True, "$ne": None, "$ne": ""}}},
         {"$group": {"_id": "$phone", "ids": {"$push": "$id"}, "emails": {"$addToSet": "$email"}, "count": {"$sum": 1}}},
@@ -444,9 +415,6 @@ async def migrate_duplicate_accounts():
                 continue
             keep = await merge_user_accounts(keep, drop)
             collapsed += 1
-
-    # 3) Drop the same phone from any remaining orphan records so the unique
-    #    phone index (sparse) can be created cleanly.
     orphans = await db.users.find(
         {"phone": {"$exists": True, "$ne": None, "$ne": ""}}, {"_id": 0, "id": 1, "phone": 1, "email": 1, "created_at": 1}
     ).sort("created_at", ASCENDING).to_list(10000)
@@ -461,64 +429,34 @@ async def migrate_duplicate_accounts():
         elif owner != doc["id"]:
             await db.users.update_one({"id": doc["id"]}, {"$set": {"phone": None}})
             collapsed += 1
-
     if collapsed:
         logging.info(f"migrate_duplicate_accounts: collapsed {collapsed} duplicate user record(s)")
 
 
 async def ensure_user_indexes():
-    """Unique constraints that enforce one email = one user = one phone."""
     try:
         await db.users.create_index("id", unique=True)
     except DuplicateKeyError:
         pass
-    # Unique email (sparse so pre-email legacy rows are allowed).
     try:
-        await db.users.create_index(
-    "email",
-    unique=True,
-    sparse=True,
-    name="uniq_email_lower",
-    collation={"locale": "en", "strength": 2},
-        )
+        await db.users.create_index("email", unique=True, sparse=True, name="uniq_email_lower", collation={"locale": "en", "strength": 2})
     except DuplicateKeyError:
         logging.warning("uniq_email_lower index creation skipped: duplicate emails remain")
-    # Unique phone (sparse so rows without a phone are allowed).
     try:
-        await db.users.create_index(
-    "phone",
-    unique=True,
-    sparse=True,
-    name="uniq_phone",
-        )
+        await db.users.create_index("phone", unique=True, sparse=True, name="uniq_phone")
     except DuplicateKeyError:
         logging.warning("uniq_phone index creation skipped: duplicate phones remain")
 
 
 async def seed_database():
     count = await db.menu.count_documents({})
-
     if count == 0:
         items = []
         for item in SEED_MENU:
-            full = {
-                "id": str(uuid.uuid4()),
-                "name": item["name"],
-                "description": item["description"],
-                "category": item["category"],
-                "price": float(item["price"]),
-                "image": item["image"],
-                "veg": item["veg"],
-                "in_stock": True,
-                "variants": item.get("variants", []),
-                "popular": item.get("popular", False),
-            }
+            full = {"id": str(uuid.uuid4()), "name": item["name"], "description": item["description"], "category": item["category"], "price": float(item["price"]), "image": item["image"], "veg": item["veg"], "in_stock": True, "variants": item.get("variants", []), "popular": item.get("popular", False)}
             items.append(full)
-
         await db.menu.insert_many(items)
         logging.info(f"Seeded {len(items)} menu items")
-
-    # Reset coupons (testing)
     await db.coupons.delete_many({})
     await db.coupons.insert_many([dict(c) for c in SEED_COUPONS])
     logging.info("Coupons reset successfully")
@@ -530,17 +468,12 @@ async def root():
     return {"app": "Mezbaan Restro", "tagline": "Freshly Crafted, Honestly Served"}
 
 
-# ---- Auth (Google Sign-In) ----
 @api.post("/auth/google")
 async def google_login(req: GoogleLoginRequest):
     verified_email = None
     verified_google_id = None
     try:
-        resp = http_requests.get(
-            "https://oauth2.googleapis.com/tokeninfo",
-            params={"id_token": req.id_token},
-            timeout=8,
-        )
+        resp = http_requests.get("https://oauth2.googleapis.com/tokeninfo", params={"id_token": req.id_token}, timeout=8)
         if resp.status_code == 200:
             data = resp.json()
             if GOOGLE_CLIENT_ID and data.get("aud") != GOOGLE_CLIENT_ID:
@@ -549,20 +482,16 @@ async def google_login(req: GoogleLoginRequest):
             verified_google_id = data.get("sub")
     except http_requests.RequestException:
         pass
-
     google_id = verified_google_id or req.google_id
     email = (verified_email or req.email or "").lower().strip()
     if not google_id:
         raise HTTPException(status_code=400, detail="Google authentication failed")
     if not email:
         raise HTTPException(status_code=400, detail="Email is required")
-
     existing = await db.users.find_one({"google_id": google_id}, {"_id": 0})
     if not existing:
         existing = await db.users.find_one({"email": email}, {"_id": 0})
-
     admin = is_admin_email(email)
-
     if existing:
         updates = {}
         if not existing.get("google_id"):
@@ -576,52 +505,24 @@ async def google_login(req: GoogleLoginRequest):
         if updates:
             await db.users.update_one({"id": existing["id"]}, {"$set": updates})
             existing.update(updates)
-        token = pyjwt.encode(
-            {"sub": existing["id"], "exp": datetime.now(timezone.utc) + timedelta(days=30)},
-            GOOGLE_TOKEN_SECRET,
-            algorithm="HS256",
-        )
+        token = pyjwt.encode({"sub": existing["id"], "exp": datetime.now(timezone.utc) + timedelta(days=30)}, GOOGLE_TOKEN_SECRET, algorithm="HS256")
         return {"token": token, "user": existing}
-
     user_id = str(uuid.uuid4())
     referral_code = f"MEZ{user_id[:6].upper()}"
-    user_doc = {
-        "id": user_id,
-        "name": req.name.strip() or email.split("@")[0],
-        "email": email,
-        "google_id": google_id,
-        "picture": req.picture,
-        "phone": None,
-        "is_admin": admin,
-        "wallet": 0.0,
-        "referral_code": referral_code,
-        "wishlist": [],
-        "addresses": [],
-        "recently_viewed": [],
-        "created_at": now_iso(),
-    }
+    user_doc = {"id": user_id, "name": req.name.strip() or email.split("@")[0], "email": email, "google_id": google_id, "picture": req.picture, "phone": None, "is_admin": admin, "wallet": 0.0, "referral_code": referral_code, "wishlist": [], "addresses": [], "recently_viewed": [], "created_at": now_iso()}
     try:
         await db.users.insert_one(dict(user_doc))
     except DuplicateKeyError:
         existing = await db.users.find_one({"email": email}, {"_id": 0})
         if not existing:
             raise HTTPException(status_code=409, detail="Account creation conflict; please sign in instead")
-        token = pyjwt.encode(
-            {"sub": existing["id"], "exp": datetime.now(timezone.utc) + timedelta(days=30)},
-            GOOGLE_TOKEN_SECRET,
-            algorithm="HS256",
-        )
+        token = pyjwt.encode({"sub": existing["id"], "exp": datetime.now(timezone.utc) + timedelta(days=30)}, GOOGLE_TOKEN_SECRET, algorithm="HS256")
         return {"token": token, "user": existing}
     user_doc.pop("_id", None)
-    token = pyjwt.encode(
-        {"sub": user_id, "exp": datetime.now(timezone.utc) + timedelta(days=30)},
-        GOOGLE_TOKEN_SECRET,
-        algorithm="HS256",
-    )
+    token = pyjwt.encode({"sub": user_id, "exp": datetime.now(timezone.utc) + timedelta(days=30)}, GOOGLE_TOKEN_SECRET, algorithm="HS256")
     return {"token": token, "user": user_doc}
 
 
-# ---- Auth (Email + Password) ----
 @api.post("/auth/email-password")
 async def email_password_login(req: EmailPasswordLoginRequest):
     SUPABASE_URL = os.getenv("SUPABASE_URL", "")
@@ -631,27 +532,17 @@ async def email_password_login(req: EmailPasswordLoginRequest):
     verified_email = None
     if SUPABASE_URL and api_key:
         try:
-            resp = http_requests.get(
-                f"{SUPABASE_URL}/auth/v1/user",
-                headers={
-                    "Authorization": f"Bearer {req.supabase_token}",
-                    "apikey": api_key,
-                },
-                timeout=8,
-            )
+            resp = http_requests.get(f"{SUPABASE_URL}/auth/v1/user", headers={"Authorization": f"Bearer {req.supabase_token}", "apikey": api_key}, timeout=8)
             if resp.status_code == 200:
                 data = resp.json()
                 verified_email = data.get("email")
         except http_requests.RequestException:
             pass
-
     email = (verified_email or req.email or "").lower().strip()
     if not email:
         raise HTTPException(status_code=400, detail="Email authentication failed")
-
     existing = await db.users.find_one({"email": email}, {"_id": 0})
     admin = is_admin_email(email)
-
     if existing:
         updates = {}
         if not existing.get("email"):
@@ -661,48 +552,21 @@ async def email_password_login(req: EmailPasswordLoginRequest):
         if updates:
             await db.users.update_one({"id": existing["id"]}, {"$set": updates})
             existing.update(updates)
-        token = pyjwt.encode(
-            {"sub": existing["id"], "exp": datetime.now(timezone.utc) + timedelta(days=30)},
-            GOOGLE_TOKEN_SECRET,
-            algorithm="HS256",
-        )
+        token = pyjwt.encode({"sub": existing["id"], "exp": datetime.now(timezone.utc) + timedelta(days=30)}, GOOGLE_TOKEN_SECRET, algorithm="HS256")
         return {"token": token, "user": existing}
-
     user_id = str(uuid.uuid4())
     referral_code = f"MEZ{user_id[:6].upper()}"
-    user_doc = {
-        "id": user_id,
-        "name": (req.name or "").strip() or email.split("@")[0],
-        "email": email,
-        "google_id": None,
-        "picture": None,
-        "phone": None,
-        "is_admin": admin,
-        "wallet": 0.0,
-        "referral_code": referral_code,
-        "wishlist": [],
-        "addresses": [],
-        "recently_viewed": [],
-        "created_at": now_iso(),
-    }
+    user_doc = {"id": user_id, "name": (req.name or "").strip() or email.split("@")[0], "email": email, "google_id": None, "picture": None, "phone": None, "is_admin": admin, "wallet": 0.0, "referral_code": referral_code, "wishlist": [], "addresses": [], "recently_viewed": [], "created_at": now_iso()}
     try:
         await db.users.insert_one(dict(user_doc))
     except DuplicateKeyError:
         existing = await db.users.find_one({"email": email}, {"_id": 0})
         if not existing:
             raise HTTPException(status_code=409, detail="Account creation conflict; please sign in instead")
-        token = pyjwt.encode(
-            {"sub": existing["id"], "exp": datetime.now(timezone.utc) + timedelta(days=30)},
-            GOOGLE_TOKEN_SECRET,
-            algorithm="HS256",
-        )
+        token = pyjwt.encode({"sub": existing["id"], "exp": datetime.now(timezone.utc) + timedelta(days=30)}, GOOGLE_TOKEN_SECRET, algorithm="HS256")
         return {"token": token, "user": existing}
     user_doc.pop("_id", None)
-    token = pyjwt.encode(
-        {"sub": user_id, "exp": datetime.now(timezone.utc) + timedelta(days=30)},
-        GOOGLE_TOKEN_SECRET,
-        algorithm="HS256",
-    )
+    token = pyjwt.encode({"sub": user_id, "exp": datetime.now(timezone.utc) + timedelta(days=30)}, GOOGLE_TOKEN_SECRET, algorithm="HS256")
     return {"token": token, "user": user_doc}
 
 
@@ -711,22 +575,14 @@ async def update_mobile(req: MobileUpdateRequest, current_user: dict = Depends(g
     phone = req.phone.strip()
     if not phone or len(phone) < 10:
         raise HTTPException(status_code=400, detail="Valid 10-digit mobile number required")
-
     current_email = (current_user.get("email") or "").lower().strip()
-
-    # Any other record holding this phone.
     clash = await db.users.find_one({"phone": phone, "id": {"$ne": current_user["id"]}}, {"_id": 0})
     if clash:
         clash_email = (clash.get("email") or "").lower().strip()
-        # Same email (or a legacy no-email record for the same user) -> merge
-        # the stale duplicate into the current authenticated account instead
-        # of blocking the user from their own phone.
         if not clash_email or clash_email == current_email:
             current_user = await merge_user_accounts(current_user, clash)
         else:
-            # Phone genuinely belongs to a different user.
             raise HTTPException(status_code=409, detail="This mobile number is already linked to another account")
-
     await db.users.update_one({"id": current_user["id"]}, {"$set": {"phone": phone}})
     updated = await db.users.find_one({"id": current_user["id"]}, {"_id": 0})
     return {"user": updated}
@@ -781,7 +637,6 @@ async def push_recent(body: Dict[str, Any], current_user: dict = Depends(get_cur
     return {"recently_viewed": rv}
 
 
-# ---- Menu ----
 @api.get("/menu")
 async def list_menu(category: Optional[str] = None, search: Optional[str] = None):
     q: Dict[str, Any] = {}
@@ -807,7 +662,6 @@ async def get_item(item_id: str):
     return item
 
 
-# ---- Coupons ----
 @api.get("/coupons")
 async def list_coupons():
     return await db.coupons.find({"active": True}, {"_id": 0}).to_list(50)
@@ -827,18 +681,13 @@ async def validate_coupon(code: str, subtotal: float, current_user: dict = Depen
         except ValueError:
             pass
     if coupon.get("first_order_only"):
-        already = await db.orders.count_documents({
-            "user_id": current_user["id"],
-            "coupon_code": code.upper(),
-            "payment_status": {"$in": ["paid", "cod_pending"]},
-        })
+        already = await db.orders.count_documents({"user_id": current_user["id"], "coupon_code": code.upper(), "payment_status": {"$in": ["paid", "cod_pending"]}})
         if already > 0:
             raise HTTPException(status_code=400, detail="This welcome offer is valid only on your first order")
     discount = round(subtotal * coupon["discount_percent"] / 100, 2)
     return {"valid": True, "code": coupon["code"], "discount": discount, "discount_percent": coupon["discount_percent"]}
 
 
-# ---- Orders ----
 def calculate_totals(items: List[CartItem], coupon: Optional[dict]) -> dict:
     subtotal = sum(i.price * i.quantity for i in items)
     discount = 0.0
@@ -867,19 +716,11 @@ async def place_order(req: PlaceOrderRequest, current_user: dict = Depends(get_c
             except ValueError:
                 pass
         if coupon.get("first_order_only"):
-            already = await db.orders.count_documents({
-                "user_id": current_user["id"],
-                "coupon_code": req.coupon_code.upper(),
-                "payment_status": {"$in": ["paid", "cod_pending"]},
-            })
+            already = await db.orders.count_documents({"user_id": current_user["id"], "coupon_code": req.coupon_code.upper(), "payment_status": {"$in": ["paid", "cod_pending"]}})
             if already > 0:
                 raise HTTPException(status_code=400, detail="Welcome offer is valid only on your first order")
             if req.device_id:
-                device_reuse = await db.orders.count_documents({
-                    "device_id": req.device_id,
-                    "coupon_code": req.coupon_code.upper(),
-                    "payment_status": {"$in": ["paid", "cod_pending"]},
-                })
+                device_reuse = await db.orders.count_documents({"device_id": req.device_id, "coupon_code": req.coupon_code.upper(), "payment_status": {"$in": ["paid", "cod_pending"]}})
                 if device_reuse > 0:
                     raise HTTPException(status_code=400, detail="Welcome offer already used on this device")
     totals = calculate_totals(req.items, coupon)
@@ -898,23 +739,15 @@ async def place_order(req: PlaceOrderRequest, current_user: dict = Depends(get_c
             logger.exception("Razorpay order creation failed")
             raise HTTPException(status_code=502, detail=f"Payment gateway error: {str(e)}")
         razorpay_order_id = rzp_order["id"]
-    order = {
-        "id": order_id, "order_no": order_no, "user_id": current_user["id"],
-        "user_name": req.name, "user_phone": req.phone, "address": req.address,
-        "items": [i.dict() for i in req.items], "payment_method": req.payment_method,
-        "payment_status": payment_status, "razorpay_order_id": razorpay_order_id,
-        "razorpay_payment_id": None, "razorpay_signature": None,
-        "coupon_code": req.coupon_code, "device_id": req.device_id, "notes": req.notes,
-        **totals, "status": "received", "status_history": [{"status": "received", "at": now_iso()}], "created_at": now_iso(),
-    }
+    order = {"id": order_id, "order_no": order_no, "user_id": current_user["id"], "user_name": req.name, "user_phone": req.phone, "address": req.address, "items": [i.dict() for i in req.items], "payment_method": req.payment_method, "payment_status": payment_status, "razorpay_order_id": razorpay_order_id, "razorpay_payment_id": None, "razorpay_signature": None, "coupon_code": req.coupon_code, "device_id": req.device_id, "notes": req.notes, **totals, "status": "received", "status_history": [{"status": "received", "at": now_iso()}], "created_at": now_iso()}
     await db.orders.insert_one(dict(order))
     order.pop("_id", None)
     if razorpay_order_id:
         order["razorpay_key_id"] = RAZORPAY_KEY_ID
+    await send_fcm_new_order(order)
     return order
 
 
-# ---- Razorpay ----
 @api.post("/payments/razorpay/verify")
 async def verify_razorpay_payment(payload: RazorpayVerifyRequest, current_user: dict = Depends(get_current_user)):
     order = await db.orders.find_one({"id": payload.order_id}, {"_id": 0})
@@ -972,10 +805,15 @@ async def get_order(order_id: str, current_user: dict = Depends(get_current_user
     return order
 
 
-# ---- Admin (email-gated via require_admin) ----
 @api.get("/admin/orders")
 async def admin_orders(_: bool = Depends(require_admin)):
     orders = await db.orders.find({}, {"_id": 0}).sort("created_at", -1).to_list(500)
+    return orders
+
+
+@api.get("/admin/orders/pending")
+async def admin_pending_orders(_: bool = Depends(require_admin)):
+    orders = await db.orders.find({"status": "received"}, {"_id": 0}).sort("created_at", -1).to_list(100)
     return orders
 
 
@@ -991,6 +829,7 @@ async def update_status(order_id: str, body: OrderStatusUpdate, _: bool = Depend
     await db.orders.update_one({"id": order_id}, {"$set": {"status": body.status, "status_history": history}})
     order["status"] = body.status
     order["status_history"] = history
+    await send_fcm_order_resolved(order_id, body.status)
     return order
 
 
@@ -1053,6 +892,12 @@ async def admin_update_coupon(code: str, patch: CouponUpdate, _: bool = Depends(
         await db.coupons.update_one({"code": code.upper()}, {"$set": updates})
     updated = await db.coupons.find_one({"code": updates.get("code", code.upper())}, {"_id": 0})
     return updated
+
+
+@api.post("/auth/fcm-token")
+async def register_fcm_token(req: FCMTokenRequest, current_user: dict = Depends(get_current_user)):
+    await db.users.update_one({"id": current_user["id"]}, {"$set": {"fcm_token": req.token}})
+    return {"success": True}
 
 
 app.include_router(api)
