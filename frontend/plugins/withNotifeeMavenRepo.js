@@ -1,40 +1,55 @@
 const { withProjectBuildGradle } = require("@expo/config-plugins");
 
 /**
- * withNotifeeMavenRepo — adds the local @notifee/react-native/android/libs
- * directory as a Maven repository to the root project's
- * allprojects.repositories block so that Gradle can resolve the
- * `app.notifee:core` AAR that ships inside the npm package.
+ * withNotifeeMavenRepo — forces Gradle to resolve app.notifee artifacts
+ * exclusively from the local node_modules directory using Gradle's
+ * exclusiveContent directive.
+ *
+ * Without this, Gradle searches Google Maven, Maven Central, JitPack,
+ * etc. for app.notifee:core and fails because the AAR only ships inside
+ * the npm package at @notifee/react-native/android/libs.
+ *
+ * See: https://github.com/invertase/notifee/issues/1284
  */
 function withNotifeeMavenRepo(config) {
   return withProjectBuildGradle(config, (cfg) => {
     if (cfg.modResults.language !== "groovy") return cfg;
 
     const content = cfg.modResults.contents;
-    if (content.includes("withNotifeeMavenRepo")) return cfg;
+    if (content.includes('includeGroup "app.notifee"')) return cfg;
 
-    const repoEntry =
-      '    maven { url "${rootDir}/../node_modules/@notifee/react-native/android/libs" } // withNotifeeMavenRepo';
+    const exclusiveContent = `
+    exclusiveContent {
+      filter {
+        includeGroup "app.notifee"
+      }
+      forRepository {
+        maven {
+          url "$rootDir/../node_modules/@notifee/react-native/android/libs"
+        }
+      }
+    }`;
 
-    // Add to the existing allprojects.repositories block
-    const allprojectsMatch = content.match(
-      /allprojects\s*\{\s*repositories\s*\{/
-    );
-    if (allprojectsMatch) {
+    // Insert into existing allprojects.repositories block
+    if (content.match(/allprojects\s*\{\s*repositories\s*\{/)) {
       cfg.modResults.contents = content.replace(
         /allprojects\s*\{\s*repositories\s*\{/,
-        (match) => match + "\n" + repoEntry
+        (match) => match + "\n" + exclusiveContent
       );
     } else if (content.includes("allprojects")) {
       cfg.modResults.contents = content.replace(
         /allprojects\s*\{/,
-        (match) => match + "\n  repositories {\n" + repoEntry + "\n  }"
+        (match) =>
+          match +
+          "\n  repositories {" +
+          exclusiveContent +
+          "\n    google()\n    mavenCentral()\n  }"
       );
     } else {
       cfg.modResults.contents =
         content +
-        "\nallprojects {\n  repositories {\n" +
-        repoEntry +
+        "\nallprojects {\n  repositories {" +
+        exclusiveContent +
         "\n    google()\n    mavenCentral()\n  }\n}\n";
     }
 
