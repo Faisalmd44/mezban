@@ -45,7 +45,11 @@ function withGradleMemoryFix(config) {
     fs.writeFileSync(propsPath, props);
     console.log("[withGradleMemoryFix] Updated gradle.properties");
 
-    // Wrap gradlew to add --stacktrace and capture output for debugging
+    // Wrap gradlew to add --stacktrace and capture output for debugging.
+    // Use pipefail so the exit code reflects gradle's actual result,
+    // not tee's (which is always 0). Without this, a failed gradle build
+    // reports success in CI, causing the artifact upload step to fail
+    // because the APK was never produced.
     const gradlewPath = path.join(androidDir, "gradlew");
     const realGradlewPath = path.join(androidDir, "gradlew-real");
 
@@ -54,6 +58,7 @@ function withGradleMemoryFix(config) {
 
       const wrapper = '#!/bin/sh\n' +
         '# gradlew wrapper - adds --stacktrace and captures output\n' +
+        'set -o pipefail\n' +
         'DIR="$(cd "$(dirname "$0")" && pwd)"\n' +
         'LOG_FILE="$DIR/gradle-build-output.log"\n' +
         'sh "$DIR/gradlew-real" "$@" --stacktrace 2>&1 | tee "$LOG_FILE"\n' +
@@ -68,7 +73,7 @@ function withGradleMemoryFix(config) {
 
       fs.writeFileSync(gradlewPath, wrapper);
       fs.chmodSync(gradlewPath, 0o755);
-      console.log("[withGradleMemoryFix] Created gradlew wrapper with --stacktrace");
+      console.log("[withGradleMemoryFix] Created gradlew wrapper with --stacktrace and pipefail");
     }
 
     return cfg;
