@@ -7,7 +7,7 @@
     "icon": "./assets/images/icon.png",
     "scheme": "mezbaan",
     "userInterfaceStyle": "dark",
-    "newArchEnabled": true,
+    "newArchEnabled": false,
     "android": {
       "package": "com.emergent.restroorder.fa9uvz",
       "adaptiveIcon": {
