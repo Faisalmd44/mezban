@@ -12,6 +12,17 @@ import * as Linking from "expo-linking";
 import { COLORS, SPACING, RADIUS, SHADOW } from "@/src/theme";
 import { supabase } from "@/src/lib/supabase";
 
+function parseFragmentParams(fragment: string): Record<string, string> {
+  const params: Record<string, string> = {};
+  if (!fragment) return params;
+  const clean = fragment.startsWith("#") ? fragment.slice(1) : fragment;
+  for (const pair of clean.split("&")) {
+    const [key, val] = pair.split("=");
+    if (key && val) params[decodeURIComponent(key)] = decodeURIComponent(val);
+  }
+  return params;
+}
+
 export default function ResetPasswordScreen() {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -32,23 +43,27 @@ export default function ResetPasswordScreen() {
         const initialUrl = await Linking.getInitialURL();
         if (initialUrl) {
           const parsedUrl = Linking.parse(initialUrl);
-          if (parsedUrl.queryParams?.access_token) {
+
+          // Supabase implicit-flow recovery links put tokens in the URL
+          // fragment (#access_token=...&refresh_token=...&type=recovery),
+          // NOT in query params. Parse the fragment explicitly.
+          const fragParams = parseFragmentParams(parsedUrl.fragment || "");
+          if (fragParams.access_token) {
+            accessToken = fragParams.access_token;
+            refreshToken = fragParams.refresh_token || null;
+          }
+
+          // Fallback: some configurations use query params instead of fragment
+          if (!accessToken && parsedUrl.queryParams?.access_token) {
             accessToken = parsedUrl.queryParams.access_token as string;
             refreshToken = (parsedUrl.queryParams.refresh_token as string) || null;
           }
         }
 
+        // Also check route params (expo-router may pass them through)
         if (!accessToken && params.access_token) {
           accessToken = params.access_token as string;
           refreshToken = (params.refresh_token as string) || null;
-        }
-
-        if (!accessToken) {
-          const { data: sessData } = await supabase.auth.getSession();
-          if (sessData.session) {
-            accessToken = sessData.session.access_token;
-            refreshToken = sessData.session.refresh_token;
-          }
         }
 
         if (!accessToken) {
@@ -63,6 +78,7 @@ export default function ResetPasswordScreen() {
         });
 
         if (sessError) {
+          // Only show "expired" when the token is actually invalid/expired
           setError("Invalid or expired reset link. Please request a new one.");
         }
       } catch {
