@@ -207,7 +207,7 @@ export default function LoginScreen() {
                 />
               </View>
               <View style={styles.inputRow}>
-                <Ionicons name="lock-closed-outline" size={20" color={COLORS.textMuted} style={{ marginHorizontal: SPACING.sm }} />
+                <Ionicons name="lock-closed-outline" size={20} color={COLORS.textMuted} style={{ marginHorizontal: SPACING.sm }} />
                 <TextInput
                   testID="login-password-input"
                   placeholder="Password"
