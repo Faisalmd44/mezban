@@ -16,7 +16,8 @@
       },
       "edgeToEdgeEnabled": true,
       "permissions": [
-        "android.permission.VIBRATE"
+        "android.permission.VIBRATE",
+        "android.permission.INTERNET"
       ]
     },
     "ios": {

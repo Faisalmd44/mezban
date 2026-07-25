@@ -1,0 +1,72 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools build-tools;34.0.0 platforms;android-34 ndk;27.1.12297006'
+
+      - name: Create placeholder app icons
+        run: |
+          mkdir -p assets/images
+          PNG_B64="iVBORw0KGgoAAAANSUhEUgAAAGQAAABkCAYAAABw4p+UAAAALUlEQVR4nO3BAQEAAACCIP+vbkhAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA4G3yAQAEl8N1egAAAABJRU5ErkJggg=="
+          for f in icon.png adaptive-icon.png splash-icon.png favicon.png; do
+            if [ ! -f "assets/images/$f" ]; then
+              echo "$PNG_B64" | base64 -d > "assets/images/$f"
+            fi
+          done
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Expo prebuild (generate native Android project)
+        run: npx expo prebuild --platform android --no-install --clean
+        env:
+          EXPO_NO_TELEMETRY: 1
+
+      - name: Make gradlew executable
+        run: chmod +x android/gradlew
+
+      - name: Build debug APK
+        working-directory: android
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Locate APK
+        id: apk
+        run: |
+          APK=$(find android/app/build/outputs -name "*.apk" -type f | head -1)
+          echo "apk_path=$APK" >> $GITHUB_OUTPUT
+          echo "Found APK at: $APK"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mezbaan-customer-apk
+          path: ${{ steps.apk.outputs.apk_path }}
+          if-no-files-found: error
+          retention-days: 30
