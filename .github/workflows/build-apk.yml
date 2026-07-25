@@ -13,6 +13,8 @@ jobs:
     env:
       ANDROID_HOME: /usr/local/lib/android/sdk
       GRADLE_OPTS: -Dorg.gradle.daemon=false -Dorg.gradle.workers.max=3
+      EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
+      EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
 
     steps:
       - name: Checkout
@@ -37,6 +39,11 @@ jobs:
       - name: Accept Android SDK licenses
         run: |
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
+
+      - name: Create .env file for build
+        run: |
+          echo "EXPO_PUBLIC_SUPABASE_URL=${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}" >> .env
+          echo "EXPO_PUBLIC_SUPABASE_ANON_KEY=${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}" >> .env
 
       - name: Create app icons
         run: |
@@ -76,7 +83,6 @@ jobs:
           ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tee gradle-build.log
           EXIT_CODE=${PIPESTATUS[0]}
           echo "Gradle exit code: $EXIT_CODE"
-          # Print last 100 lines for visibility
           echo "=== LAST 100 LINES OF GRADLE OUTPUT ==="
           tail -100 gradle-build.log
           exit $EXIT_CODE
