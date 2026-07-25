@@ -52,6 +52,15 @@ jobs:
         env:
           EXPO_NO_TELEMETRY: 1
 
+      - name: Increase Gradle memory
+        run: |
+          if [ -f android/gradle.properties ]; then
+            sed -i 's/org.gradle.jvmargs=.*/org.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m/' android/gradle.properties
+          fi
+          echo "org.gradle.caching=true" >> android/gradle.properties
+          echo "android.useAndroidX=true" >> android/gradle.properties
+          echo "android.abortOnError=false" >> android/gradle.properties
+
       - name: Make gradlew executable
         run: chmod +x android/gradlew
 

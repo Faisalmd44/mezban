@@ -39,8 +39,7 @@
           "backgroundColor": "#000"
         }
       ],
-      "expo-font",
-      "./plugins/withGradleMemoryFix"
+      "expo-font"
     ],
     "experiments": {
       "tsdImports": true
