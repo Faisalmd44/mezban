@@ -1,38 +1,22 @@
-// Test IDs for the auth feature (login, register, logout) — consumed via
-// React Native's `testID` prop on TouchableOpacity / Pressable / TextInput /
-// Button / Switch and friends. Add new keys here as you wire up additional
-// auth UI; see ./index.js for the recipe to add a new feature file.
-//
-// React Native uses `testID` (camelCase, no dash), not `data-testid`:
-//   import { LOGIN } from '../constants/testIds';
-//   <TouchableOpacity testID={LOGIN.submitButton} onPress={...} />
-//   <TextInput testID={LOGIN.emailInput} ... />
-//
-// Directive:
-//   - Keys are camelCase, values are kebab-case shaped as `<feature>-<element>`
-//     (or `<feature>-<element>-<qualifier>` when an element repeats). Examples:
-//     'login-submit-button', 'cart-quantity-input', 'product-card-image'.
-//
-// Why kebab-case values: required by qabot's CSS-attribute-style selector
-// matcher and the lint rule `emergent(kebab-case-testid-prop)`.
-
-export const LOGIN = {
-	emailInput: 'login-email-input',
-	passwordInput: 'login-password-input',
-	submitButton: 'login-submit-button',
-	forgotPasswordLink: 'login-forgot-password-link',
-	registerLink: 'login-register-link',
-};
-
-export const REGISTER = {
-	nameInput: 'register-name-input',
-	emailInput: 'register-email-input',
-	passwordInput: 'register-password-input',
-	passwordConfirmInput: 'register-password-confirm-input',
-	submitButton: 'register-submit-button',
-	loginLink: 'register-login-link',
-};
-
-export const LOGOUT = {
-	button: 'logout-button',
+export const AUTH_TEST_IDS = {
+  EMAIL_INPUT: "login-email-input",
+  PASSWORD_INPUT: "login-password-input",
+  SIGN_IN_BUTTON: "login-signin-btn",
+  SIGN_UP_BUTTON: "login-signup-btn",
+  GOOGLE_BUTTON: "login-google-btn",
+  EMAIL_BUTTON: "login-email-btn",
+  SIGNUP_NAME: "signup-name-input",
+  SIGNUP_EMAIL: "signup-email-input",
+  SIGNUP_PASSWORD: "signup-password-input",
+  SIGNUP_CONFIRM_PASSWORD: "signup-confirm-password-input",
+  FORGOT_LINK: "login-forgot-link",
+  FORGOT_EMAIL: "forgot-email-input",
+  SEND_RESET: "login-send-reset",
+  BACK_TO_SIGNIN: "login-back-to-signin",
+  GOTO_SIGNUP: "login-goto-signup",
+  GOTO_SIGNIN: "login-goto-signin",
+  BRAND_TITLE: "brand-title",
+  LOGIN_ERROR: "login-error",
+  PHONE_INPUT: "login-phone-input",
+  SUBMIT_BUTTON: "login-submit-button",
 };
