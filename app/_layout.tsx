@@ -1,98 +1,142 @@
-import { Stack, useRouter, useSegments } from "expo-router";
-import { useEffect, useState, useCallback } from "react";
-import { GestureHandlerRootView } from "react-native-gesture-handler";
-import { SafeAreaProvider } from "react-native-safe-area-context";
+import { useEffect, useState } from "react";
+import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
+import { ActivityIndicator, View } from "react-native";
 import * as SplashScreen from "expo-splash-screen";
 
+import { COLORS } from "@/src/theme";
 import { useIconFonts } from "@/src/hooks/use-icon-fonts";
-import {
-  AppContext, AppUser, CartLine, loadCart, loadToken, saveCart, clearToken,
-  loadRecentlyViewed, saveRecentlyViewed,
-} from "@/src/store";
+import { AppContext, AppUser, CartLine, loadCart, loadRecentlyViewed, loadToken, saveCart, saveRecentlyViewed, useApp } from "@/src/store";
 import { api } from "@/src/api";
 
-SplashScreen.preventAutoHideAsync().catch(() => {});
+SplashScreen.preventAutoHideAsync();
 
-const BOOT_TIMEOUT = 4000;
+type MezbaanAppState = {
+  user: AppUser | null;
+  cart: CartLine[];
+  wishlist: string[];
+  recentlyViewed: string[];
+};
 
-export default function RootLayout() {
-  const [loaded, error] = useIconFonts();
-  const [bootDone, setBootDone] = useState(false);
-  const [user, setUser] = useState<AppUser | null>(null);
-  const [cart, setCart] = useState<CartLine[]>([]);
-  const [recentlyViewed, setRecentlyViewed] = useState<string[]>([]);
-  const router = useRouter();
-  const segments = useSegments();
+const initialState: MezbaanAppState = {
+  user: null,
+  cart: [],
+  wishlist: [],
+  recentlyViewed: [],
+};
+
+function MezbaanProvider({ children }: { children: React.ReactNode }) {
+  const [state, setState] = useState<MezbaanAppState>(initialState);
+  const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    let cancelled = false;
-    const boot = (async () => {
-      try {
-        const token = await loadToken();
-        if (token) {
-          try { const me = await api.me(); if (!cancelled) setUser(me); } catch { await clearToken(); }
+    (async () => {
+      const token = await loadToken();
+      const cart = await loadCart();
+      const recent = await loadRecentlyViewed();
+      let user: AppUser | null = null;
+      if (token) {
+        try {
+          user = await api.me();
+        } catch {
+          user = null;
         }
-        if (!cancelled) setCart(await loadCart());
-        if (!cancelled) setRecentlyViewed(await loadRecentlyViewed());
-      } finally { if (!cancelled) setBootDone(true); }
+      }
+      setState({ user, cart, wishlist: user?.wishlist || [], recentlyViewed: recent });
+      setReady(true);
     })();
-    const timer = setTimeout(() => { if (!cancelled) setBootDone(true); }, BOOT_TIMEOUT);
-    return () => { cancelled = true; clearTimeout(timer); };
   }, []);
 
-  useEffect(() => {
-    if (!bootDone) return;
-    const inAuth = segments[0] === "(auth)";
-    if (!user && !inAuth) router.replace("/(auth)/login");
-    else if (user && inAuth) router.replace("/(tabs)");
-  }, [bootDone, user, segments, router]);
+  const setUser = (u: AppUser | null) => setState((s) => ({ ...s, user: u, wishlist: u?.wishlist || [] }));
 
-  useEffect(() => { saveCart(cart); }, [cart]);
-  useEffect(() => { saveRecentlyViewed(recentlyViewed); }, [recentlyViewed]);
-
-  const addToCart = useCallback((line: CartLine) => {
-    setCart((prev) => {
-      const idx = prev.findIndex((l) => l.item_id === line.item_id && l.variant === line.variant);
-      if (idx >= 0) { const next = [...prev]; next[idx] = { ...next[idx], quantity: next[idx].quantity + line.quantity }; return next; }
-      return [...prev, line];
+  const addToCart = (line: CartLine) =>
+    setState((s) => {
+      const idx = s.cart.findIndex((l) => l.item_id === line.item_id && l.variant === line.variant);
+      let cart: CartLine[];
+      if (idx >= 0) {
+        cart = [...s.cart];
+        cart[idx] = { ...cart[idx], quantity: cart[idx].quantity + line.quantity };
+      } else {
+        cart = [...s.cart, line];
+      }
+      saveCart(cart);
+      return { ...s, cart };
     });
-  }, []);
 
-  const updateQty = useCallback((item_id: string, variant: string | undefined, qty: number) => {
-    setCart((prev) => {
-      if (qty <= 0) return prev.filter((l) => !(l.item_id === item_id && l.variant === variant));
-      return prev.map((l) => l.item_id === item_id && l.variant === variant ? { ...l, quantity: qty } : l);
+  const updateQty = (item_id: string, variant: string | undefined, qty: number) =>
+    setState((s) => {
+      const cart = qty <= 0
+        ? s.cart.filter((l) => !(l.item_id === item_id && l.variant === variant))
+        : s.cart.map((l) => (l.item_id === item_id && l.variant === variant ? { ...l, quantity: qty } : l));
+      saveCart(cart);
+      return { ...s, cart };
     });
-  }, []);
 
-  const clearCart = useCallback(() => setCart([]), []);
-  const refreshUser = useCallback(async () => { try { setUser(await api.me()); } catch {} }, []);
+  const clearCart = () => {
+    saveCart([]);
+    setState((s) => ({ ...s, cart: [] }));
+  };
 
-  const toggleWishlist = useCallback(async (id: string) => {
-    try { const res = await api.toggleWishlist(id); setUser((u) => u ? { ...u, wishlist: res.wishlist } : u); } catch {}
-  }, []);
+  const toggleWishlist = async (id: string) => {
+    await api.toggleWishlist(id);
+    const { user } = await api.me();
+    setState((s) => ({ ...s, user, wishlist: user?.wishlist || [] }));
+  };
 
-  const pushRecentlyViewed = useCallback((id: string) => {
-    setRecentlyViewed((prev) => { const next = [id, ...prev.filter((x) => x !== id)].slice(0, 20); api.pushRecentlyViewed(id).catch(() => {}); return next; });
-  }, []);
+  const refreshUser = async () => {
+    const user = await api.me();
+    setState((s) => ({ ...s, user, wishlist: user?.wishlist || [] }));
+  };
 
-  const ready = bootDone && (loaded || error);
+  const pushRecentlyViewed = (id: string) =>
+    setState((s) => {
+      const recentlyViewed = [id, ...s.recentlyViewed.filter((r) => r !== id)].slice(0, 10);
+      saveRecentlyViewed(recentlyViewed);
+      return { ...s, recentlyViewed };
+    });
 
-  useEffect(() => {
-    if (ready) SplashScreen.hideAsync().catch(() => {});
-  }, [ready]);
-
-  if (!ready) return null;
+  if (!ready) {
+    return (
+      <View style={{ flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: COLORS.black }}>
+        <ActivityIndicator size="large" color={COLORS.gold} />
+      </View>
+    );
+  }
 
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
-      <SafeAreaProvider>
-        <AppContext.Provider value={{ user, setUser, cart, addToCart, updateQty, clearCart, wishlist: user?.wishlist || [], toggleWishlist, refreshUser, recentlyViewed, pushRecentlyViewed }}>
-          <StatusBar style="light" />
-          <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: "#0A0A0A" } }} />
-        </AppContext.Provider>
-      </SafeAreaProvider>
-    </GestureHandlerRootView>
+    <AppContext.Provider value={{ user: state.user, setUser, cart: state.cart, addToCart, updateQty, clearCart, wishlist: state.wishlist, toggleWishlist, refreshUser, recentlyViewed: state.recentlyViewed, pushRecentlyViewed }}>
+      {children}
+    </AppContext.Provider>
+  );
+}
+
+export default function RootLayout() {
+  const [fontsLoaded, fontError] = useIconFonts();
+
+  useEffect(() => {
+    if (fontsLoaded || fontError) {
+      SplashScreen.hideAsync();
+    }
+  }, [fontsLoaded, fontError]);
+
+  if (!fontsLoaded && !fontError) {
+    return null;
+  }
+
+  return (
+    <MezbaanProvider>
+      <Stack screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="(auth)" />
+        <Stack.Screen name="product/[id]" />
+        <Stack.Screen name="checkout" />
+        <Stack.Screen name="tracking/[id]" />
+        <Stack.Screen name="offers" />
+        <Stack.Screen name="wishlist" />
+        <Stack.Screen name="auth/callback" />
+        <Stack.Screen name="+not-found" />
+      </Stack>
+      <StatusBar style="light" />
+    </MezbaanProvider>
   );
 }
