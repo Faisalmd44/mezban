@@ -69,6 +69,40 @@ jobs:
           echo "android.useAndroidX=true" >> android/gradle.properties
           echo "android.abortOnError=false" >> android/gradle.properties
 
-      - name: Build debug APK
+      - name: Build debug APK (capture output)
         working-directory: android
-        run: ./gradlew assembleDebug --no-daemon --stacktrace --info
+        run: |
+          set +e
+          ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tee gradle-build.log
+          EXIT_CODE=${PIPESTATUS[0]}
+          echo "Gradle exit code: $EXIT_CODE"
+          # Print last 100 lines for visibility
+          echo "=== LAST 100 LINES OF GRADLE OUTPUT ==="
+          tail -100 gradle-build.log
+          exit $EXIT_CODE
+
+      - name: Upload build log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gradle-build-log
+          path: android/gradle-build.log
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Locate APK
+        if: success()
+        id: apk
+        run: |
+          APK=$(find android/app/build/outputs -name "*.apk" -type f | head -1)
+          echo "apk_path=$APK" >> $GITHUB_OUTPUT
+          echo "Found APK at: $APK"
+
+      - name: Upload APK artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mezbaan-customer-apk
+          path: ${{ steps.apk.outputs.apk_path }}
+          if-no-files-found: error
+          retention-days: 30
