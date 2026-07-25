@@ -1,6 +1,6 @@
 import { useState, useCallback } from "react";
 import { makeRedirectUri } from "expo-auth-session";
-import { supabase } from "@/src/lib/supabase";
+import { supabase, hasSupabaseConfig } from "@/src/lib/supabase";
 
 const RESET_REDIRECT_URI = makeRedirectUri({
   scheme: "mezbaan-customer",
@@ -16,6 +16,7 @@ export function useEmailAuth() {
       setError("");
       setLoading(true);
       try {
+        if (!hasSupabaseConfig) throw new Error("Supabase is not configured.");
         const { data, error: sbError } = await supabase.auth.signUp({
           email,
           password,
@@ -45,6 +46,7 @@ export function useEmailAuth() {
       setError("");
       setLoading(true);
       try {
+        if (!hasSupabaseConfig) throw new Error("Supabase is not configured.");
         const { data, error: sbError } = await supabase.auth.signInWithPassword({ email, password });
         if (sbError) {
           setError(sbError.message);
@@ -70,6 +72,7 @@ export function useEmailAuth() {
       setError("");
       setLoading(true);
       try {
+        if (!hasSupabaseConfig) throw new Error("Supabase is not configured.");
         const { error: sbError } = await supabase.auth.resetPasswordForEmail(email, {
           redirectTo: RESET_REDIRECT_URI,
         });

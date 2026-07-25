@@ -2,7 +2,7 @@ import { useState, useCallback } from "react";
 import * as WebBrowser from "expo-web-browser";
 import * as Linking from "expo-linking";
 import { makeRedirectUri } from "expo-auth-session";
-import { supabase } from "@/src/lib/supabase";
+import { supabase, hasSupabaseConfig } from "@/src/lib/supabase";
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -26,6 +26,7 @@ export function useGoogleAuth() {
     setError("");
     setLoading(true);
     try {
+      if (!hasSupabaseConfig) throw new Error("Supabase is not configured.");
       const { data, error: sbError } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
@@ -59,7 +60,7 @@ export function useGoogleAuth() {
         accessToken = parsed.queryParams.access_token as string;
       } else {
         try {
-          const hashParams = new URLSearchParams(new URL(url).hash.replace(/^#/, ""));
+          const hashParams = new URLSearchParams(new URL(url).hash.replace(/^[#]/, ""));
           accessToken = hashParams.get("access_token");
         } catch {
           // URL parsing failed, try fallback below
