@@ -14,9 +14,9 @@ export type RazorpaySuccessPayload = {
 type Props = {
   keyId: string;
   razorpayOrderId: string;
-  amount: number; // in paise
+  amount: number;
   currency?: string;
-  name: string; // brand shown in checkout
+  name: string;
   description?: string;
   prefill: { name: string; contact: string; email?: string };
   onSuccess: (payload: RazorpaySuccessPayload) => void;
@@ -24,8 +24,6 @@ type Props = {
   onDismiss: () => void;
 };
 
-// Small HTML page loaded inside the WebView which drives Razorpay Checkout
-// and posts the result back to React Native via window.ReactNativeWebView.
 const buildCheckoutHtml = (opts: {
   keyId: string;
   razorpayOrderId: string;
@@ -96,7 +94,6 @@ const buildCheckoutHtml = (opts: {
           post({ type: 'failure', payload: { description: String(e) } });
         }
       }
-      // Wait for checkout.js to attach, then open.
       var tries = 0;
       var iv = setInterval(function () {
         tries++;
@@ -153,9 +150,7 @@ export default function RazorpayWebView(props: Props) {
       } else if (data?.type === "dismiss") {
         props.onDismiss();
       }
-    } catch {
-      // ignore malformed messages
-    }
+    } catch {}
   };
 
   return (
