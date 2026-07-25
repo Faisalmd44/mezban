@@ -29,32 +29,18 @@ export function useGoogleAuth() {
       if (!hasSupabaseConfig) throw new Error("Supabase is not configured.");
       const { data, error: sbError } = await supabase.auth.signInWithOAuth({
         provider: "google",
-        options: {
-          redirectTo: REDIRECT_URI,
-          skipBrowserRedirect: true,
-        },
+        options: { redirectTo: REDIRECT_URI, skipBrowserRedirect: true },
       });
-
-      if (sbError) {
-        setError(sbError.message);
-        return null;
-      }
-      if (!data?.url) {
-        setError("No OAuth URL returned from Supabase");
-        return null;
-      }
-
+      if (sbError) { setError(sbError.message); return null; }
+      if (!data?.url) { setError("No OAuth URL returned from Supabase"); return null; }
       const result = await WebBrowser.openAuthSessionAsync(data.url, REDIRECT_URI);
-
       if (result?.type !== "success") {
         if (result?.type === "dismiss" || result?.type === "cancel") return null;
         setError("Google sign-in was cancelled or failed");
         return null;
       }
-
       const url = result.url;
       let accessToken: string | null = null;
-
       const parsed = Linking.parse(url);
       if (parsed.queryParams?.access_token) {
         accessToken = parsed.queryParams.access_token as string;
@@ -62,26 +48,15 @@ export function useGoogleAuth() {
         try {
           const hashParams = new URLSearchParams(new URL(url).hash.replace(/^[#]/, ""));
           accessToken = hashParams.get("access_token");
-        } catch {
-          // URL parsing failed, try fallback below
-        }
+        } catch {}
       }
-
       if (!accessToken) {
         const { data: sessData, error: sessError } = await supabase.auth.getSession();
-        if (sessError || !sessData.session) {
-          setError("Failed to retrieve session after Google sign-in");
-          return null;
-        }
+        if (sessError || !sessData.session) { setError("Failed to retrieve session after Google sign-in"); return null; }
         accessToken = sessData.session.access_token;
       }
-
       const { data: userData, error: userError } = await supabase.auth.getUser(accessToken);
-      if (userError || !userData.user) {
-        setError("Failed to get user info from Supabase");
-        return null;
-      }
-
+      if (userError || !userData.user) { setError("Failed to get user info from Supabase"); return null; }
       const user = userData.user;
       return {
         supabase_token: accessToken,

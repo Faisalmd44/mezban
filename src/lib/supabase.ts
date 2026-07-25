@@ -1,14 +1,10 @@
-import { createClient, SupabaseClient } from "@supabase/supabase-js";
+import { createClient } from "@supabase/supabase-js";
 
-const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL || "";
-const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || "";
+const url = process.env.EXPO_PUBLIC_SUPABASE_URL;
+const anonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
 
-export const hasSupabaseConfig = !!(SUPABASE_URL && SUPABASE_ANON_KEY);
+export const hasSupabaseConfig = Boolean(url && anonKey);
 
-export const supabase: SupabaseClient = hasSupabaseConfig
-  ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-      auth: {
-        detectSessionInUrl: false,
-      },
-    })
-  : (null as unknown as SupabaseClient);
+export const supabase = createClient(url || "https://placeholder.supabase.co", anonKey || "placeholder-anon-key", {
+  auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false },
+});
