@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { View, ActivityIndicator, StyleSheet } from "react-native";
 import { useRouter } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
-import { supabase } from "@/src/lib/supabase";
+import { supabase, hasSupabaseConfig } from "@/src/lib/supabase";
 import { COLORS } from "@/src/theme";
 
 WebBrowser.maybeCompleteAuthSession();
@@ -13,6 +13,7 @@ export default function AuthCallback() {
   useEffect(() => {
     const handleCallback = async () => {
       try {
+        if (!hasSupabaseConfig) { router.replace("/(auth)/login"); return; }
         const { data: sessionData } = await supabase.auth.getSession();
         if (sessionData.session) {
           router.replace("/(tabs)");

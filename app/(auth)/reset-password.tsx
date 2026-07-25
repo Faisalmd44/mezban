@@ -10,7 +10,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Linking from "expo-linking";
 
 import { COLORS, SPACING, RADIUS, SHADOW } from "@/src/theme";
-import { supabase } from "@/src/lib/supabase";
+import { supabase, hasSupabaseConfig } from "@/src/lib/supabase";
 
 function parseFragmentParams(fragment: string): Record<string, string> {
   const params: Record<string, string> = {};
@@ -72,6 +72,7 @@ export default function ResetPasswordScreen() {
           return;
         }
 
+        if (!hasSupabaseConfig) { setError("Supabase is not configured."); setVerifying(false); return; }
         const { error: sessError } = await supabase.auth.setSession({
           access_token: accessToken,
           refresh_token: refreshToken || "",
@@ -96,6 +97,7 @@ export default function ResetPasswordScreen() {
     if (password !== confirmPassword) { setError("Passwords do not match"); return; }
     setLoading(true);
     try {
+      if (!hasSupabaseConfig) { setError("Supabase is not configured."); return; }
       const { error: updateError } = await supabase.auth.updateUser({ password });
       if (updateError) {
         setError(updateError.message);
@@ -114,7 +116,7 @@ export default function ResetPasswordScreen() {
     <View style={styles.root}>
       <Image source="https://images.unsplash.com/photo-1414235077428-338989a2e8c0?w=1200" style={StyleSheet.absoluteFill} contentFit="cover" transition={400} />
       <LinearGradient colors={["rgba(10,10,10,0.6)", "rgba(10,10,10,0.88)", COLORS.black]} style={StyleSheet.absoluteFill} />
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.kb}>
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height" style={styles.kb}>
         <ScrollView contentContainerStyle={[styles.scroll, { paddingTop: insets.top + 60 }]} keyboardShouldPersistTaps="handled">
           <View style={styles.heroWrap}>
             <View style={styles.logoRing}><Text style={styles.logoMonogram}>M</Text></View>
