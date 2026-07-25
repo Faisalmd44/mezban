@@ -29,17 +29,11 @@ export default function ProfileTab() {
 const savePhone = async () => {
   try {
     setSaving(true);
-
     const res = await api.updateMobile(phone);
-
     setUser(res);
-
     Alert.alert("Success", "Mobile number updated successfully");
   } catch (e: any) {
-    Alert.alert(
-      "Error",
-      e?.response?.data?.detail || "Unable to update mobile number"
-    );
+    Alert.alert("Error", e?.response?.data?.detail || "Unable to update mobile number");
   } finally {
     setSaving(false);
   }
@@ -63,35 +57,9 @@ const savePhone = async () => {
         <Text testID="profile-name" style={styles.name}>{user?.name || "Guest"}</Text>
         <Text style={styles.email}>{user?.email || ""}</Text>
        <View style={{ paddingHorizontal: 20, width: "100%", marginTop: 10 }}>
-  <TextInput
-    value={phone}
-    onChangeText={setPhone}
-    keyboardType="phone-pad"
-    placeholder="Enter mobile number"
-    placeholderTextColor="#777"
-    style={{
-      backgroundColor: "#222",
-      color: "#fff",
-      borderRadius: 10,
-      padding: 12,
-      borderWidth: 1,
-      borderColor: "#444",
-    }}
-  />
-
-  <Pressable
-    onPress={savePhone}
-    style={{
-      backgroundColor: "#D4AF37",
-      padding: 12,
-      borderRadius: 10,
-      marginTop: 10,
-      alignItems: "center",
-    }}
-  >
-    <Text style={{ fontWeight: "bold", color: "#000" }}>
-      {saving ? "Saving..." : "Save Number"}
-    </Text>
+  <TextInput value={phone} onChangeText={setPhone} keyboardType="phone-pad" placeholder="Enter mobile number" placeholderTextColor="#777" style={{ backgroundColor: "#222", color: "#fff", borderRadius: 10, padding: 12, borderWidth: 1, borderColor: "#444" }} />
+  <Pressable onPress={savePhone} style={{ backgroundColor: "#D4AF37", padding: 12, borderRadius: 10, marginTop: 10, alignItems: "center" }}>
+    <Text style={{ fontWeight: "bold", color: "#000" }}>{saving ? "Saving..." : "Save Number"}</Text>
   </Pressable>
 </View>
       </LinearGradient>
