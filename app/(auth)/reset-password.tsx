@@ -116,7 +116,7 @@ export default function ResetPasswordScreen() {
     <View style={styles.root}>
       <Image source="https://images.unsplash.com/photo-1414235077428-338989a2e8c0?w=1200" style={StyleSheet.absoluteFill} contentFit="cover" transition={400} />
       <LinearGradient colors={["rgba(10,10,10,0.6)", "rgba(10,10,10,0.88)", COLORS.black]} style={StyleSheet.absoluteFill} />
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height" style={styles.kb}>
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.kb}>
         <ScrollView contentContainerStyle={[styles.scroll, { paddingTop: insets.top + 60 }]} keyboardShouldPersistTaps="handled">
           <View style={styles.heroWrap}>
             <View style={styles.logoRing}><Text style={styles.logoMonogram}>M</Text></View>
