@@ -92,52 +92,25 @@ async function sendAdminPushNotification(supabaseClient: any, order: any) {
       .from("users")
       .select("id")
       .eq("is_admin", true);
-
     if (!admins || admins.length === 0) return;
-
     const adminIds = admins.map((a: any) => a.id);
     const { data: tokens } = await supabaseClient
       .from("fcm_tokens")
       .select("token")
       .in("user_id", adminIds);
-
     if (!tokens || tokens.length === 0) return;
-
     const serverKey = Deno.env.get("FCM_SERVER_KEY");
     if (!serverKey) return;
-
-    const itemSummary = (order.order_items || [])
-      .map((i: any) => `${i.quantity}x ${i.name}`)
-      .join(", ");
-
+    const itemSummary = (order.order_items || []).map((i: any) => `${i.quantity}x ${i.name}`).join(", ");
     const payload = {
-      notification: {
-        title: "New Order Received!",
-        body: `Order #${order.order_no} — ${itemSummary || "New order"} • ₹${order.total}`,
-        sound: "alarm",
-      },
-      data: {
-        order_id: order.id,
-        order_no: order.order_no,
-        type: "new_order",
-      },
-      android: {
-        priority: "high",
-        notification: {
-          sound: "alarm",
-          channel_id: "new-order-alarm",
-          priority: "high",
-        },
-      },
+      notification: { title: "New Order Received!", body: `Order #${order.order_no} — ${itemSummary || "New order"} • ₹${order.total}`, sound: "alarm" },
+      data: { order_id: order.id, order_no: order.order_no, type: "new_order" },
+      android: { priority: "high", notification: { sound: "alarm", channel_id: "new-order-alarm", priority: "high" } },
       registration_ids: tokens.map((t: any) => t.token),
     };
-
     await fetch("https://fcm.googleapis.com/fcm/send", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `key=${serverKey}`,
-      },
+      headers: { "Content-Type": "application/json", Authorization: `key=${serverKey}` },
       body: JSON.stringify(payload),
     });
   } catch {}
@@ -147,7 +120,6 @@ Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 200, headers: corsHeaders });
   }
-
   try {
     const url = new URL(req.url);
     const path = url.pathname.replace(/^\/mezbaan-api/, "");
@@ -292,7 +264,6 @@ Deno.serve(async (req: Request) => {
       const body = await req.json();
       const { items, address, total, payment_method, payment_status } = body;
       if (!items || !Array.isArray(items) || items.length === 0) return error("No items in order", 400);
-
       const orderNo = "MEZ-" + Date.now();
       const { data: order, error: oe } = await supabase.from("orders").insert({
         order_no: orderNo, user_id: user.id, user_name: body.user_name || "",
@@ -300,13 +271,11 @@ Deno.serve(async (req: Request) => {
         status: "received", payment_method: payment_method || "cod", payment_status: payment_status || "pending",
       }).select("*").single();
       if (oe) return error(oe.message, 500);
-
       const orderItems = items.map((item: any) => ({
         order_id: order.id, item_id: item.item_id || null, name: item.name, price: item.price, quantity: item.quantity,
       }));
       const { error: oie } = await supabase.from("order_items").insert(orderItems);
       if (oie) return error(oie.message, 500);
-
       let razorpayOrderId: string | null = null;
       if ((payment_method || "cod") === "razorpay") {
         razorpayOrderId = await createRazorpayOrder(Math.round(Number(order.total) * 100), order.order_no);
@@ -314,7 +283,6 @@ Deno.serve(async (req: Request) => {
           await supabase.from("orders").update({ razorpay_order_id: razorpayOrderId }).eq("id", order.id);
         }
       }
-
       const { data: fullOrder } = await supabase.from("orders").select("*, order_items(*)").eq("id", order.id).single();
       await sendAdminPushNotification(supabase, fullOrder);
       return json(fullOrder);
