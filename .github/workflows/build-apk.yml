@@ -10,6 +10,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
 
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      GRADLE_OPTS: -Dorg.gradle.daemon=false -Dorg.gradle.workers.max=3
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -29,6 +33,10 @@ jobs:
         uses: android-actions/setup-android@v3
         with:
           packages: 'platform-tools build-tools;34.0.0 platforms;android-34 ndk;27.1.12297006'
+
+      - name: Accept Android SDK licenses
+        run: |
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
 
       - name: Create app icons
         run: |
@@ -61,24 +69,6 @@ jobs:
           echo "android.useAndroidX=true" >> android/gradle.properties
           echo "android.abortOnError=false" >> android/gradle.properties
 
-      - name: Make gradlew executable
-        run: chmod +x android/gradlew
-
       - name: Build debug APK
         working-directory: android
-        run: ./gradlew assembleDebug --no-daemon --stacktrace
-
-      - name: Locate APK
-        id: apk
-        run: |
-          APK=$(find android/app/build/outputs -name "*.apk" -type f | head -1)
-          echo "apk_path=$APK" >> $GITHUB_OUTPUT
-          echo "Found APK at: $APK"
-
-      - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: mezbaan-customer-apk
-          path: ${{ steps.apk.outputs.apk_path }}
-          if-no-files-found: error
-          retention-days: 30
+        run: ./gradlew assembleDebug --no-daemon --stacktrace --info
