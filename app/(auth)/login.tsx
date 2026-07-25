@@ -193,175 +193,50 @@ export default function LoginScreen() {
               <Text style={styles.cardSub}>Enter your email and password to continue</Text>
               <View style={styles.inputRow}>
                 <Ionicons name="mail-outline" size={20} color={COLORS.textMuted} style={{ marginHorizontal: SPACING.sm }} />
-                <TextInput
-                  testID="login-email-input"
-                  placeholder="you@example.com"
-                  placeholderTextColor={COLORS.textMuted}
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  value={email}
-                  onChangeText={setEmail}
-                  style={styles.input}
-                  onSubmitEditing={onSignIn}
-                />
+                <TextInput testID="login-email-input" placeholder="you@example.com" placeholderTextColor={COLORS.textMuted} keyboardType="email-address" autoCapitalize="none" autoCorrect={false} value={email} onChangeText={setEmail} style={styles.input} onSubmitEditing={onSignIn} />
               </View>
               <View style={styles.inputRow}>
                 <Ionicons name="lock-closed-outline" size={20} color={COLORS.textMuted} style={{ marginHorizontal: SPACING.sm }} />
-                <TextInput
-                  testID="login-password-input"
-                  placeholder="Password"
-                  placeholderTextColor={COLORS.textMuted}
-                  secureTextEntry
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  value={password}
-                  onChangeText={setPassword}
-                  style={styles.input}
-                  onSubmitEditing={onSignIn}
-                />
+                <TextInput testID="login-password-input" placeholder="Password" placeholderTextColor={COLORS.textMuted} secureTextEntry autoCapitalize="none" autoCorrect={false} value={password} onChangeText={setPassword} style={styles.input} onSubmitEditing={onSignIn} />
               </View>
               {displayError ? <Text testID="login-error" style={styles.error}>{displayError}</Text> : null}
               <Pressable testID="login-signin-btn" onPress={onSignIn} disabled={loading || authLoading || !email || !password} style={({ pressed }) => [styles.cta, pressed && { transform: [{ scale: 0.98 }] }]}>
-                {loading || authLoading ? <ActivityIndicator color={COLORS.black} /> : (
-                  <>
-                    <Text style={styles.ctaText}>Sign In</Text>
-                    <Ionicons name="arrow-forward" size={20} color={COLORS.black} />
-                  </>
-                )}
+                {loading || authLoading ? <ActivityIndicator color={COLORS.black} /> : (<><Text style={styles.ctaText}>Sign In</Text><Ionicons name="arrow-forward" size={20} color={COLORS.black} /></>)}
               </Pressable>
-              <Pressable testID="login-forgot-link" onPress={() => { setError(""); setInfo(""); setResetSent(false); setMode("forgot"); }} style={styles.forgotBtn}>
-                <Text style={styles.forgotTxt}>Forgot Password?</Text>
-              </Pressable>
-              <View style={styles.switchRow}>
-                <Text style={styles.switchTxt}>Don't have an account? </Text>
-                <Pressable testID="login-goto-signup" onPress={() => { setError(""); setInfo(""); setPassword(""); setMode("signup"); }}>
-                  <Text style={styles.switchLink}>Sign Up</Text>
-                </Pressable>
-              </View>
+              <Pressable testID="login-forgot-link" onPress={() => { setError(""); setInfo(""); setResetSent(false); setMode("forgot"); }} style={styles.forgotBtn}><Text style={styles.forgotTxt}>Forgot Password?</Text></Pressable>
+              <View style={styles.switchRow}><Text style={styles.switchTxt}>Don't have an account? </Text><Pressable testID="login-goto-signup" onPress={() => { setError(""); setInfo(""); setPassword(""); setMode("signup"); }}><Text style={styles.switchLink}>Sign Up</Text></Pressable></View>
             </View>
           )}
 
           {mode === "signup" && (
             <View style={styles.card}>
-              <Pressable onPress={() => { setError(""); setInfo(""); setMode("select"); }} style={styles.backBtn}>
-                <Ionicons name="arrow-back" size={20} color={COLORS.gold} />
-                <Text style={styles.backTxt}>Back</Text>
-              </Pressable>
+              <Pressable onPress={() => { setError(""); setInfo(""); setMode("select"); }} style={styles.backBtn}><Ionicons name="arrow-back" size={20} color={COLORS.gold} /><Text style={styles.backTxt}>Back</Text></Pressable>
               <Text style={styles.cardTitle}>Create Account</Text>
               <Text style={styles.cardSub}>Sign up to start ordering premium meals</Text>
-              <View style={styles.inputRow}>
-                <Ionicons name="person-outline" size={20} color={COLORS.textMuted} style={{ marginHorizontal: SPACING.sm }} />
-                <TextInput
-                  testID="signup-name-input"
-                  placeholder="Full name"
-                  placeholderTextColor={COLORS.textMuted}
-                  autoCapitalize="words"
-                  autoCorrect={false}
-                  value={name}
-                  onChangeText={setName}
-                  style={styles.input}
-                />
-              </View>
-              <View style={styles.inputRow}>
-                <Ionicons name="mail-outline" size={20} color={COLORS.textMuted} style={{ marginHorizontal: SPACING.sm }} />
-                <TextInput
-                  testID="signup-email-input"
-                  placeholder="you@example.com"
-                  placeholderTextColor={COLORS.textMuted}
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  value={email}
-                  onChangeText={setEmail}
-                  style={styles.input}
-                />
-              </View>
-              <View style={styles.inputRow}>
-                <Ionicons name="lock-closed-outline" size={20} color={COLORS.textMuted} style={{ marginHorizontal: SPACING.sm }} />
-                <TextInput
-                  testID="signup-password-input"
-                  placeholder="Password (min 6 characters)"
-                  placeholderTextColor={COLORS.textMuted}
-                  secureTextEntry
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  value={password}
-                  onChangeText={setPassword}
-                  style={styles.input}
-                />
-              </View>
-              <View style={styles.inputRow}>
-                <Ionicons name="lock-closed-outline" size={20} color={COLORS.textMuted} style={{ marginHorizontal: SPACING.sm }} />
-                <TextInput
-                  testID="signup-confirm-password-input"
-                  placeholder="Confirm password"
-                  placeholderTextColor={COLORS.textMuted}
-                  secureTextEntry
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  value={confirmPassword}
-                  onChangeText={setConfirmPassword}
-                  style={styles.input}
-                  onSubmitEditing={onSignUp}
-                />
-              </View>
+              <View style={styles.inputRow}><Ionicons name="person-outline" size={20} color={COLORS.textMuted} style={{ marginHorizontal: SPACING.sm }} /><TextInput testID="signup-name-input" placeholder="Full name" placeholderTextColor={COLORS.textMuted} autoCapitalize="words" autoCorrect={false} value={name} onChangeText={setName} style={styles.input} /></View>
+              <View style={styles.inputRow}><Ionicons name="mail-outline" size={20} color={COLORS.textMuted} style={{ marginHorizontal: SPACING.sm }} /><TextInput testID="signup-email-input" placeholder="you@example.com" placeholderTextColor={COLORS.textMuted} keyboardType="email-address" autoCapitalize="none" autoCorrect={false} value={email} onChangeText={setEmail} style={styles.input} /></View>
+              <View style={styles.inputRow}><Ionicons name="lock-closed-outline" size={20} color={COLORS.textMuted} style={{ marginHorizontal: SPACING.sm }} /><TextInput testID="signup-password-input" placeholder="Password (min 6 characters)" placeholderTextColor={COLORS.textMuted} secureTextEntry autoCapitalize="none" autoCorrect={false} value={password} onChangeText={setPassword} style={styles.input} /></View>
+              <View style={styles.inputRow}><Ionicons name="lock-closed-outline" size={20} color={COLORS.textMuted} style={{ marginHorizontal: SPACING.sm }} /><TextInput testID="signup-confirm-password-input" placeholder="Confirm password" placeholderTextColor={COLORS.textMuted} secureTextEntry autoCapitalize="none" autoCorrect={false} value={confirmPassword} onChangeText={setConfirmPassword} style={styles.input} onSubmitEditing={onSignUp} /></View>
               {displayError ? <Text testID="login-error" style={styles.error}>{displayError}</Text> : null}
               <Pressable testID="login-signup-btn" onPress={onSignUp} disabled={loading || authLoading || !email || !password || !name.trim()} style={({ pressed }) => [styles.cta, pressed && { transform: [{ scale: 0.98 }] }]}>
-                {loading || authLoading ? <ActivityIndicator color={COLORS.black} /> : (
-                  <>
-                    <Text style={styles.ctaText}>Sign Up</Text>
-                    <Ionicons name="person-add" size={20} color={COLORS.black} />
-                  </>
-                )}
+                {loading || authLoading ? <ActivityIndicator color={COLORS.black} /> : (<><Text style={styles.ctaText}>Sign Up</Text><Ionicons name="person-add" size={20} color={COLORS.black} /></>)}
               </Pressable>
-              <View style={styles.switchRow}>
-                <Text style={styles.switchTxt}>Already have an account? </Text>
-                <Pressable testID="login-goto-signin" onPress={() => { setError(""); setInfo(""); setPassword(""); setConfirmPassword(""); setMode("signin"); }}>
-                  <Text style={styles.switchLink}>Sign In</Text>
-                </Pressable>
-              </View>
+              <View style={styles.switchRow}><Text style={styles.switchTxt}>Already have an account? </Text><Pressable testID="login-goto-signin" onPress={() => { setError(""); setInfo(""); setPassword(""); setConfirmPassword(""); setMode("signin"); }}><Text style={styles.switchLink}>Sign In</Text></Pressable></View>
             </View>
           )}
 
           {mode === "forgot" && (
             <View style={styles.card}>
-              <Pressable onPress={() => { setError(""); setInfo(""); setResetSent(false); setMode("signin"); }} style={styles.backBtn}>
-                <Ionicons name="arrow-back" size={20} color={COLORS.gold} />
-                <Text style={styles.backTxt}>Back</Text>
-              </Pressable>
+              <Pressable onPress={() => { setError(""); setInfo(""); setResetSent(false); setMode("signin"); }} style={styles.backBtn}><Ionicons name="arrow-back" size={20} color={COLORS.gold} /><Text style={styles.backTxt}>Back</Text></Pressable>
               <Text style={styles.cardTitle}>Forgot Password</Text>
               <Text style={styles.cardSub}>Enter your email and we'll send you a password reset link</Text>
-              <View style={styles.inputRow}>
-                <Ionicons name="mail-outline" size={20} color={COLORS.textMuted} style={{ marginHorizontal: SPACING.sm }} />
-                <TextInput
-                  testID="forgot-email-input"
-                  placeholder="you@example.com"
-                  placeholderTextColor={COLORS.textMuted}
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  value={email}
-                  onChangeText={setEmail}
-                  style={styles.input}
-                  onSubmitEditing={onForgotPassword}
-                />
-              </View>
+              <View style={styles.inputRow}><Ionicons name="mail-outline" size={20} color={COLORS.textMuted} style={{ marginHorizontal: SPACING.sm }} /><TextInput testID="forgot-email-input" placeholder="you@example.com" placeholderTextColor={COLORS.textMuted} keyboardType="email-address" autoCapitalize="none" autoCorrect={false} value={email} onChangeText={setEmail} style={styles.input} onSubmitEditing={onForgotPassword} /></View>
               {displayError ? <Text testID="login-error" style={styles.error}>{displayError}</Text> : null}
               {info && resetSent ? <Text testID="forgot-success" style={styles.info}>{info}</Text> : null}
               <Pressable testID="login-send-reset" onPress={onForgotPassword} disabled={loading || authLoading || !email} style={({ pressed }) => [styles.cta, pressed && { transform: [{ scale: 0.98 }] }]}>
-                {loading || authLoading ? <ActivityIndicator color={COLORS.black} /> : (
-                  <>
-                    <Text style={styles.ctaText}>Send Reset Link</Text>
-                    <Ionicons name="mail" size={20} color={COLORS.black} />
-                  </>
-                )}
+                {loading || authLoading ? <ActivityIndicator color={COLORS.black} /> : (<><Text style={styles.ctaText}>Send Reset Link</Text><Ionicons name="mail" size={20} color={COLORS.black} /></>)}
               </Pressable>
-              {resetSent && (
-                <Pressable testID="login-back-to-signin" onPress={() => { setError(""); setInfo(""); setResetSent(false); setMode("signin"); }} style={styles.forgotBtn}>
-                  <Text style={styles.forgotTxt}>Back to Sign In</Text>
-                </Pressable>
-              )}
+              {resetSent && (<Pressable testID="login-back-to-signin" onPress={() => { setError(""); setInfo(""); setResetSent(false); setMode("signin"); }} style={styles.forgotBtn}><Text style={styles.forgotTxt}>Back to Sign In</Text></Pressable>)}
             </View>
           )}
 
@@ -370,19 +245,10 @@ export default function LoginScreen() {
               <View style={styles.stepBadge}><Text style={styles.stepBadgeTxt}>STEP 2 OF 2</Text></View>
               <Text style={styles.cardTitle}>Enter Mobile Number</Text>
               <Text style={styles.cardSub}>Welcome, {pendingUser.name?.split(" ")[0] || "Guest"}. A valid mobile number is required to place orders.</Text>
-              <View style={styles.inputRow}>
-                <Text style={styles.prefix}>+91</Text>
-                <View style={styles.inputDivider} />
-                <TextInput testID="login-phone-input" placeholder="10-digit mobile number" placeholderTextColor={COLORS.textMuted} keyboardType="number-pad" maxLength={10} value={phone} onChangeText={setPhone} style={styles.input} />
-              </View>
+              <View style={styles.inputRow}><Text style={styles.prefix}>+91</Text><View style={styles.inputDivider} /><TextInput testID="login-phone-input" placeholder="10-digit mobile number" placeholderTextColor={COLORS.textMuted} keyboardType="number-pad" maxLength={10} value={phone} onChangeText={setPhone} style={styles.input} /></View>
               {error ? <Text testID="login-error" style={styles.error}>{error}</Text> : null}
               <Pressable testID="login-submit-button" onPress={onMobileSubmit} disabled={loading} style={({ pressed }) => [styles.cta, pressed && { transform: [{ scale: 0.98 }] }]}>
-                {loading ? <ActivityIndicator color={COLORS.black} /> : (
-                  <>
-                    <Text style={styles.ctaText}>Continue</Text>
-                    <Ionicons name="arrow-forward" size={20} color={COLORS.black} />
-                  </>
-                )}
+                {loading ? <ActivityIndicator color={COLORS.black} /> : (<><Text style={styles.ctaText}>Continue</Text><Ionicons name="arrow-forward" size={20} color={COLORS.black} /></>)}
               </Pressable>
               <Text style={styles.terms}>We use this to deliver your orders and send updates.</Text>
             </View>
