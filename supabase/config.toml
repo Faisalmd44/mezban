@@ -1,0 +1,4 @@
+project_id = "jppuqbujxtmemusmbgnv"
+
+[functions.mezbaan-api]
+verify_jwt = true
