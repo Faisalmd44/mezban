@@ -1,6 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const BASE = `${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/mezbaan-api`;
+const ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || "";
 
 async function authHeader(): Promise<Record<string, string>> {
   const token = await AsyncStorage.getItem("mez_token");
@@ -10,9 +11,12 @@ async function authHeader(): Promise<Record<string, string>> {
 async function request(path: string, opts: RequestInit = {}, withAuth = true) {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
+    apikey: ANON_KEY,
     ...(opts.headers as Record<string, string> | undefined),
   };
   if (withAuth) Object.assign(headers, await authHeader());
+  else headers.Authorization = `Bearer ${ANON_KEY}`;
+
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 15000);
   let res: Response;

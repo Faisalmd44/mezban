@@ -3,8 +3,14 @@ node_modules/
 dist/
 web-build/
 .env
+.env.local
+.env.*.local
 *.log
 .DS_Store
 .metro-cache/
+.vercel/
+backend/
 .v3/
 .bolt/
+*.pyc
+__pycache__/

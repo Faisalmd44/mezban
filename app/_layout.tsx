@@ -14,7 +14,7 @@ import { api } from "@/src/api";
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
-const BOOT_TIMEOUT = 4000;
+const BOOT_TIMEOUT = 6000;
 
 export default function RootLayout() {
   const [loaded, error] = useIconFonts();
@@ -29,12 +29,13 @@ export default function RootLayout() {
     let cancelled = false;
     const boot = (async () => {
       try {
-        const token = await loadToken();
-        if (token) {
-          try { const me = await api.me(); if (!cancelled) setUser(me); } catch { await clearToken(); }
-        }
         if (!cancelled) setCart(await loadCart());
         if (!cancelled) setRecentlyViewed(await loadRecentlyViewed());
+        const token = await loadToken();
+        if (token) {
+          try { const me = await api.me(); if (!cancelled) setUser(me); }
+          catch { await clearToken(); }
+        }
       } finally { if (!cancelled) setBootDone(true); }
     })();
     const timer = setTimeout(() => { if (!cancelled) setBootDone(true); }, BOOT_TIMEOUT);
