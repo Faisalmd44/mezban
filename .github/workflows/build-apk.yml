@@ -13,8 +13,8 @@ jobs:
     env:
       ANDROID_HOME: /usr/local/lib/android/sdk
       GRADLE_OPTS: -Dorg.gradle.daemon=false -Dorg.gradle.workers.max=3
-      EXPO_PUBLIC_SUPABASE_URL: https://0ec90b57d6e95fcbda19832f.supabase.co
-      EXPO_PUBLIC_SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJib2x0IiwicmVmIjoiMGVjOTBiNTdkNmU5NWZjYmRhMTk4MzJmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTg4ODE1NzQsImV4cCI6MTc1ODg4MTU3NH0.9I8-U0x86Ak8t2DGaIk0HfvTSLsAyzdnz-Nw00mMkKw
+      EXPO_PUBLIC_SUPABASE_URL: https://jppuqbujxtmemusmbgnv.supabase.co
+      EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
 
     steps:
       - name: Checkout
@@ -24,6 +24,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: npm
 
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -33,65 +34,43 @@ jobs:
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
-        with:
-          packages: 'platform-tools build-tools;34.0.0 platforms;android-34 ndk;27.1.12297006'
 
       - name: Accept Android SDK licenses
         run: |
-          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
+          yes | sdkmanager --licenses || true
 
-      - name: Create .env file for build
+      - name: Create .env
         run: |
-          echo "EXPO_PUBLIC_SUPABASE_URL=$EXPO_PUBLIC_SUPABASE_URL" >> .env
-          echo "EXPO_PUBLIC_SUPABASE_ANON_KEY=$EXPO_PUBLIC_SUPABASE_ANON_KEY" >> .env
-          cat .env
+          echo "EXPO_PUBLIC_SUPABASE_URL=${{ env.EXPO_PUBLIC_SUPABASE_URL }}" > .env
+          echo "EXPO_PUBLIC_SUPABASE_ANON_KEY=${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}" >> .env
 
+      - name: Install dependencies
         run: npm install
 
-      - name: Expo prebuild (generate native Android project)
-        run: npx expo prebuild --platform android --no-install --clean
+      - name: Expo prebuild
         env:
           EXPO_NO_TELEMETRY: 1
+        run: |
+          npx expo prebuild --platform android --clean --no-install
 
       - name: Increase Gradle memory
         run: |
-          if [ -f android/gradle.properties ]; then
-            sed -i 's/org.gradle.jvmargs=.*/org.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m/' android/gradle.properties
-          fi
+          echo "org.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m" >> android/gradle.properties
           echo "org.gradle.caching=true" >> android/gradle.properties
           echo "android.useAndroidX=true" >> android/gradle.properties
-          echo "android.abortOnError=false" >> android/gradle.properties
-
-      - name: Build debug APK (capture output)
+      - name: Build debug APK
         working-directory: android
         run: |
-          set +e
-          ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tee gradle-build.log
-          EXIT_CODE=${PIPESTATUS[0]}
-          echo "Gradle exit code: $EXIT_CODE"
-          echo "=== LAST 100 LINES OF GRADLE OUTPUT ==="
-          tail -100 gradle-build.log
-          exit $EXIT_CODE
-
-      - name: Upload build log on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: gradle-build-log
-          path: android/gradle-build.log
-          if-no-files-found: warn
-          retention-days: 7
+          ./gradlew assembleDebug --no-daemon --stacktrace
 
       - name: Locate APK
-        if: success()
         id: apk
         run: |
-          APK=$(find android/app/build/outputs -name "*.apk" -type f | head -1)
+          APK=$(find android/app/build/outputs -name "*.apk" | head -1)
           echo "apk_path=$APK" >> $GITHUB_OUTPUT
-          echo "Found APK at: $APK"
+          echo "Found APK: $APK"
 
       - name: Upload APK artifact
-        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: mezbaan-customer-apk
@@ -101,8 +80,6 @@ jobs:
 
       - name: Setup Supabase CLI
         uses: supabase/setup-cli@v1
-        with:
-          version: latest
 
       - name: Deploy Supabase Edge Function
         env:
@@ -110,4 +87,3 @@ jobs:
         run: |
           supabase link --project-ref ${{ secrets.SUPABASE_PROJECT_REF }}
           supabase functions deploy mezbaan-api
-
