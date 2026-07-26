@@ -46,21 +46,6 @@ jobs:
           echo "EXPO_PUBLIC_SUPABASE_ANON_KEY=$EXPO_PUBLIC_SUPABASE_ANON_KEY" >> .env
           cat .env
 
-      - name: Create app icons
-        run: |
-          mkdir -p assets/images
-          node -e "
-          const fs=require('fs'),zlib=require('zlib');
-          function crc32(buf){let c=~0;for(let i=0;i<buf.length;i++){c^=buf[i];for(let j=0;j<8;j++)c=(c>>>1)^(0xEDB88320&-(c&1));}return ~c>>>0;}
-          function chunk(type,data){const t=Buffer.from(type);const l=Buffer.alloc(4);l.writeUInt32BE(data.length);const c=Buffer.alloc(4);c.writeUInt32BE(crc32(Buffer.concat([t,data])));return Buffer.concat([l,t,data,c]);}
-          function png(w,h){const sig=Buffer.from([137,80,78,71,13,10,26,10]);const ih=Buffer.alloc(13);ih.writeUInt32BE(w,0);ih.writeUInt32BE(h,4);ih[8]=8;ih[9]=6;ih[10]=0;ih[11]=0;ih[12]=0;const raw=Buffer.alloc(h*(w*4+1));const id=zlib.deflateSync(raw);return Buffer.concat([sig,chunk('IHDR',ih),chunk('IDAT',id),chunk('IEND',Buffer.alloc(0))]);}
-          const icon=png(1024,1024);const fav=png(64,64);
-          ['icon.png','adaptive-icon.png','splash-icon.png'].forEach(f=>fs.writeFileSync('assets/images/'+f,icon));
-          fs.writeFileSync('assets/images/favicon.png',fav);
-          console.log('Created app icons');
-          "
-
-      - name: Install dependencies
         run: npm install
 
       - name: Expo prebuild (generate native Android project)
