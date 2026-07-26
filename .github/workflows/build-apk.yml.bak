@@ -1,0 +1,128 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      GRADLE_OPTS: -Dorg.gradle.daemon=false -Dorg.gradle.workers.max=3
+      EXPO_PUBLIC_SUPABASE_URL: https://0ec90b57d6e95fcbda19832f.supabase.co
+      EXPO_PUBLIC_SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJib2x0IiwicmVmIjoiMGVjOTBiNTdkNmU5NWZjYmRhMTk4MzJmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTg4ODE1NzQsImV4cCI6MTc1ODg4MTU3NH0.9I8-U0x86Ak8t2DGaIk0HfvTSLsAyzdnz-Nw00mMkKw
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools build-tools;34.0.0 platforms;android-34 ndk;27.1.12297006'
+
+      - name: Accept Android SDK licenses
+        run: |
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
+
+      - name: Create .env file for build
+        run: |
+          echo "EXPO_PUBLIC_SUPABASE_URL=$EXPO_PUBLIC_SUPABASE_URL" >> .env
+          echo "EXPO_PUBLIC_SUPABASE_ANON_KEY=$EXPO_PUBLIC_SUPABASE_ANON_KEY" >> .env
+          cat .env
+
+      - name: Create app icons
+        run: |
+          mkdir -p assets/images
+          node -e "
+          const fs=require('fs'),zlib=require('zlib');
+          function crc32(buf){let c=~0;for(let i=0;i<buf.length;i++){c^=buf[i];for(let j=0;j<8;j++)c=(c>>>1)^(0xEDB88320&-(c&1));}return ~c>>>0;}
+          function chunk(type,data){const t=Buffer.from(type);const l=Buffer.alloc(4);l.writeUInt32BE(data.length);const c=Buffer.alloc(4);c.writeUInt32BE(crc32(Buffer.concat([t,data])));return Buffer.concat([l,t,data,c]);}
+          function png(w,h){const sig=Buffer.from([137,80,78,71,13,10,26,10]);const ih=Buffer.alloc(13);ih.writeUInt32BE(w,0);ih.writeUInt32BE(h,4);ih[8]=8;ih[9]=6;ih[10]=0;ih[11]=0;ih[12]=0;const raw=Buffer.alloc(h*(w*4+1));const id=zlib.deflateSync(raw);return Buffer.concat([sig,chunk('IHDR',ih),chunk('IDAT',id),chunk('IEND',Buffer.alloc(0))]);}
+          const icon=png(1024,1024);const fav=png(64,64);
+          ['icon.png','adaptive-icon.png','splash-icon.png'].forEach(f=>fs.writeFileSync('assets/images/'+f,icon));
+          fs.writeFileSync('assets/images/favicon.png',fav);
+          console.log('Created app icons');
+          "
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Expo prebuild (generate native Android project)
+        run: npx expo prebuild --platform android --no-install --clean
+        env:
+          EXPO_NO_TELEMETRY: 1
+
+      - name: Increase Gradle memory
+        run: |
+          if [ -f android/gradle.properties ]; then
+            sed -i 's/org.gradle.jvmargs=.*/org.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m/' android/gradle.properties
+          fi
+          echo "org.gradle.caching=true" >> android/gradle.properties
+          echo "android.useAndroidX=true" >> android/gradle.properties
+          echo "android.abortOnError=false" >> android/gradle.properties
+
+      - name: Build debug APK (capture output)
+        working-directory: android
+        run: |
+          set +e
+          ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tee gradle-build.log
+          EXIT_CODE=${PIPESTATUS[0]}
+          echo "Gradle exit code: $EXIT_CODE"
+          echo "=== LAST 100 LINES OF GRADLE OUTPUT ==="
+          tail -100 gradle-build.log
+          exit $EXIT_CODE
+
+      - name: Upload build log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gradle-build-log
+          path: android/gradle-build.log
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Locate APK
+        if: success()
+        id: apk
+        run: |
+          APK=$(find android/app/build/outputs -name "*.apk" -type f | head -1)
+          echo "apk_path=$APK" >> $GITHUB_OUTPUT
+          echo "Found APK at: $APK"
+
+      - name: Upload APK artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mezbaan-customer-apk
+          path: ${{ steps.apk.outputs.apk_path }}
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Deploy Supabase Edge Function
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          supabase link --project-ref ${{ secrets.SUPABASE_PROJECT_REF }}
+          supabase functions deploy mezbaan-api
+
