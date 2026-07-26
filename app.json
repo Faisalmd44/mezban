@@ -7,7 +7,7 @@
     "icon": "./assets/images/icon.png",
     "scheme": "mezbaan-customer",
     "userInterfaceStyle": "dark",
-    "newArchEnabled": true,
+    "newArchEnabled": false,
     "android": {
       "package": "com.mezbaan.customer",
       "adaptiveIcon": {
