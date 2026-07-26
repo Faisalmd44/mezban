@@ -10,16 +10,26 @@ import { api } from "@/src/api";
 import { EmptyState } from "@/src/components/ui";
 
 type Order = {
-  id: string; order_no: string; total: number; status: string;
-  payment_method: string; payment_status: string; created_at: string;
-  order_items: { name: string; quantity: number; price: number }[];
+  id: string;
+  order_no: string;
+  total: number;
+  status: string;
+  payment_method: string;
+  payment_status: string;
+  created_at: string;
+  items: {
+    name: string;
+    quantity: number;
+    price: number;
+  }[];
 };
 
-const STATUS_COLORS: Record<string, string> = {
+const STATUS_COLORS: 
+  Record<string, string> = {
   received: COLORS.warning,
   preparing: COLORS.gold,
-  ready: COLORS.goldLight,
-  dispatched: COLORS.success,
+  packed: COLORS.goldLight,
+  out_for_delivery: COLORS.success,
   delivered: COLORS.success,
   cancelled: COLORS.error,
 };
@@ -58,7 +68,7 @@ export default function OrdersTab() {
                   <Text style={[styles.statusText, { color: STATUS_COLORS[item.status] || COLORS.textMuted }]}>{item.status}</Text>
                 </View>
               </View>
-                <Text numberOfLines={2} style={styles.itemsSummary}>{(item.order_items || []).map((i: any) => `${i.quantity}x ${i.name}`).join(", ")}</Text>
+                <Text numberOfLines={2} style={styles.itemsSummary}>{(item.items || []).map((i: any) => `${i.quantity}x ${i.name}`).join(", ")}</Text>
               <View style={styles.cardFoot}>
                 <Text style={styles.total}>₹{item.total}</Text>
                 <Text style={styles.date}>{new Date(item.created_at).toLocaleDateString()}</Text>

@@ -17,7 +17,7 @@ export default function Checkout() {
   const router = useRouter();
   const { cart, user, clearCart, refreshUser } = useApp();
 
-  const [address, setAddress] = useState("Abul Fazal Enclave, Jamia Nagar, New Delhi");
+  const [address, setAddress] = useState("");
   const [phone, setPhone] = useState(user?.phone || "");
   const [name, setName] = useState(user?.name || "");
   const [notes, setNotes] = useState("");
@@ -37,8 +37,30 @@ export default function Checkout() {
   const [showRzp, setShowRzp] = useState(false);
   const [verifying, setVerifying] = useState(false);
 
-  useEffect(() => { api.coupons().then(setCoupons); }, []);
+  useEffect(() => {
+  api.coupons().then((list: any[]) => {
+    setCoupons(list);
+
+    if (!coupon) {
+      const welcome = list.find(
+        (c) => c.code === "WELCOME15" && c.active
+      );
+
+      if (welcome) {
+        setCoupon("WELCOME15");
+      }
+    }
+  });
+}, []);
   useEffect(() => { api.razorpayConfig().then((r: any) => { setRazorpayConfigured(!!r?.configured); setRazorpayKeyId(r?.key_id || ""); }).catch(() => setRazorpayConfigured(false)); }, []);
+useEffect(() => {
+  if (!user?.addresses?.length) return;
+
+  const defaultAddress =
+    user.addresses.find((a: any) => a.is_default) || user.addresses[0];
+
+  setAddress(defaultAddress.line);
+}, [user]);
 
   const subtotal = cart.reduce((s, l) => s + l.price * l.quantity, 0);
   const validCoupon = coupons.find((c) => c.code === coupon.toUpperCase() && subtotal >= Number(c.min_order));
