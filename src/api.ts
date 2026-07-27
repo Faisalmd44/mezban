@@ -10,6 +10,7 @@ async function authHeader(): Promise<Record<string, string>> {
 
 async function request(path: string, opts: RequestInit = {}, withAuth = true) {
   const headers: Record<string, string> = {
+<<<<<<< HEAD
     "Content-Type": "application/json",
     apikey: ANON_KEY,
     ...(opts.headers as Record<string, string> | undefined),
@@ -17,6 +18,18 @@ async function request(path: string, opts: RequestInit = {}, withAuth = true) {
   if (withAuth) Object.assign(headers, await authHeader());
   else headers.Authorization = `Bearer ${ANON_KEY}`;
 
+=======
+  "Content-Type": "application/json",
+  apikey: ANON_KEY,
+  ...(opts.headers as Record<string, string> | undefined),
+};
+
+if (withAuth) {
+  Object.assign(headers, await authHeader());
+} else {
+  headers.Authorization = `Bearer ${ANON_KEY}`;
+}
+>>>>>>> befe4d8 (Fix Supabase auth headers)
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 15000);
   let res: Response;
