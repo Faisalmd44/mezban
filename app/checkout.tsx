@@ -37,21 +37,7 @@ export default function Checkout() {
   const [showRzp, setShowRzp] = useState(false);
   const [verifying, setVerifying] = useState(false);
 
-  useEffect(() => {
-  api.coupons().then((list: any[]) => {
-    setCoupons(list);
-
-    if (!coupon) {
-      const welcome = list.find(
-        (c) => c.code === "WELCOME15" && c.active
-      );
-
-      if (welcome) {
-        setCoupon("WELCOME15");
-      }
-    }
-  });
-}, []);
+  useEffect(() => { api.coupons().then((list: any[]) => setCoupons(list)).catch(() => {}); }, []);
   useEffect(() => { api.razorpayConfig().then((r: any) => { setRazorpayConfigured(!!r?.configured); setRazorpayKeyId(r?.key_id || ""); }).catch(() => setRazorpayConfigured(false)); }, []);
 useEffect(() => {
   if (!user?.addresses?.length) return;
@@ -63,7 +49,7 @@ useEffect(() => {
 }, [user]);
 
   const subtotal = cart.reduce((s, l) => s + l.price * l.quantity, 0);
-  const validCoupon = coupons.find((c) => c.code === coupon.toUpperCase() && subtotal >= Number(c.min_order));
+  const validCoupon = coupons.find((c) => c.code === coupon.toUpperCase() && c.active && subtotal >= Number(c.min_order));
   const discount = validCoupon ? (validCoupon.discount_type === "percent" ? Math.round((subtotal * Number(validCoupon.discount_value)) / 100) : Number(validCoupon.discount_value)) : 0;
   const deliveryFee = subtotal >= 250 ? 0 : 30;
   const total = Math.max(0, subtotal - discount + deliveryFee);
@@ -78,7 +64,7 @@ useEffect(() => {
     setPlacing(true);
     try {
       const device_id = await getDeviceId();
-      const res = await api.placeOrder({ items: cart, address, phone, name, payment_method: payment, coupon_code: validCoupon?.code, device_id, notes });
+      const res = await api.placeOrder({ items: cart, address, user_name: name, user_phone: phone, total, payment_method: payment, coupon_code: validCoupon?.code, device_id, notes });
       if (payment === "razorpay") { setRzpOrder({ order_id: res.id, razorpay_order_id: res.razorpay_order_id, amount: Math.round(res.total * 100) }); setShowRzp(true); return; }
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       clearCart(); refreshUser(); router.replace(`/tracking/${res.id}`);
@@ -128,7 +114,7 @@ useEffect(() => {
 
         <Text style={styles.section}>Apply Coupon</Text>
         <View style={styles.input}><Ionicons name="pricetag" size={18} color={COLORS.gold} /><TextInput value={coupon} onChangeText={(t) => setCoupon(t.toUpperCase())} placeholder="Enter code" placeholderTextColor={COLORS.textMuted} autoCapitalize="characters" style={styles.txt} testID="co-coupon" /><Pressable onPress={() => setShowCoupons(true)} testID="co-view-coupons"><Text style={{ color: COLORS.gold, fontWeight: "800" }}>View</Text></Pressable></View>
-        {validCoupon ? <Text style={styles.couponGood}>✓ {validCoupon.discount_percent}% off applied!</Text> : null}
+        {validCoupon ? <Text style={styles.couponGood}>✓ {validCoupon.discount_type === "percent" ? `${validCoupon.discount_value}%` : `₹${validCoupon.discount_value}`} off applied!</Text> : null}
 
         <Text style={styles.section}>Payment Method</Text>
         <Pressable testID="pay-cod" onPress={() => setPayment("cod")} style={[styles.payRow, payment === "cod" && styles.payActive]}><Ionicons name="cash" size={22} color={COLORS.success} /><Text style={styles.payLbl}>Cash on Delivery</Text>{payment === "cod" ? <Ionicons name="checkmark-circle" size={20} color={COLORS.gold} /> : null}</Pressable>
@@ -160,8 +146,8 @@ useEffect(() => {
           <Text style={styles.modalTitle}>Available Coupons</Text>
           {coupons.map((c) => (
             <Pressable key={c.code} testID={`coupon-${c.code}`} onPress={() => { setCoupon(c.code); setShowCoupons(false); }} style={styles.couponCard}>
-              <View style={styles.couponBadge}><Text style={styles.couponPct}>{c.discount_percent}%</Text><Text style={styles.couponOff}>OFF</Text></View>
-              <View style={{ flex: 1, marginLeft: SPACING.md }}><Text style={styles.couponCode}>{c.code}</Text><Text style={styles.couponDesc}>{c.description}</Text><Text style={styles.couponMin}>Min order ₹{c.min_order}</Text></View>
+              <View style={styles.couponBadge}><Text style={styles.couponPct}>{c.discount_type === "percent" ? `${c.discount_value}%` : `₹${c.discount_value}`}</Text><Text style={styles.couponOff}>OFF</Text></View>
+              <View style={{ flex: 1, marginLeft: SPACING.md }}><Text style={styles.couponCode}>{c.code}</Text><Text style={styles.couponMin}>Min order ₹{c.min_order}</Text></View>
             </Pressable>
           ))}
           <Pressable onPress={() => setShowCoupons(false)} style={[styles.modalBtn, { backgroundColor: COLORS.gold, marginTop: SPACING.md }]}><Text style={{ color: COLORS.black, fontWeight: "800" }}>Close</Text></Pressable>
