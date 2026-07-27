@@ -61,6 +61,13 @@ async function upsertUser(userId: string, email: string, name: string, picture?:
   return data;
 }
 
+async function getProfileWithAddresses(userId: string) {
+  const profile = await getUserProfile(userId);
+  if (!profile) return null;
+  const { data: addresses } = await supabase.from("addresses").select("*").eq("user_id", userId).order("created_at", { ascending: false });
+  return { ...profile, addresses: addresses || [] };
+}
+
 async function verifySupabaseToken(token: string) {
   const { data, error: e } = await supabase.auth.getUser(token);
   if (e || !data.user) return null;
@@ -160,7 +167,8 @@ Deno.serve(async (req: Request) => {
       const user = await getAuthUser(req);
       if (!user) return error("Unauthorized", 401);
       const profile = await upsertUser(user.id, email, name, picture, google_id, device_id);
-      return json({ token: (req.headers.get("Authorization") || "").replace("Bearer ", ""), user: profile });
+      const withAddr = await getProfileWithAddresses(user.id);
+      return json({ token: (req.headers.get("Authorization") || "").replace("Bearer ", ""), user: withAddr });
     }
 
     if (path === "/auth/email-password" && method === "POST") {
@@ -170,7 +178,8 @@ Deno.serve(async (req: Request) => {
       const authUser = await verifySupabaseToken(supabase_token);
       if (!authUser) return error("Invalid token", 401);
       const profile = await upsertUser(authUser.id, email, name, undefined, undefined, device_id);
-      return json({ token: supabase_token, user: profile });
+      const withAddr = await getProfileWithAddresses(authUser.id);
+      return json({ token: supabase_token, user: withAddr });
     }
 
     if (path === "/auth/me" && method === "GET") {
@@ -178,7 +187,8 @@ Deno.serve(async (req: Request) => {
       if (!user) return error("Unauthorized", 401);
       const profile = await getUserProfile(user.id);
       if (!profile) return error("Profile not found", 404);
-      return json(profile);
+      const { data: addresses } = await supabase.from("addresses").select("*").eq("user_id", user.id).order("created_at", { ascending: false });
+      return json({ ...profile, addresses: addresses || [] });
     }
 
     if (path === "/auth/update-mobile" && method === "PATCH") {
@@ -188,7 +198,8 @@ Deno.serve(async (req: Request) => {
       const { phone } = body;
       const { data, error: e } = await supabase.from("users").update({ phone }).eq("id", user.id).select("*").single();
       if (e) return error(e.message, 500);
-      return json(data);
+      const withAddr = await getProfileWithAddresses(user.id);
+      return json(withAddr);
     }
 
     if (path === "/auth/address" && method === "POST") {
