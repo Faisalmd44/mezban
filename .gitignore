@@ -1,16 +1,38 @@
+# dependencies
 node_modules/
+
+# legacy frontend cache
+frontend/
+
+# expo
 .expo/
 dist/
 web-build/
-.env
-.env.local
-.env.*.local
-*.log
+expo-env.d.ts
+
+# native
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# metro
+.metro-health-check*
+
+# debug
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# macos
 .DS_Store
-.metro-cache/
-.vercel/
-backend/
-.v3/
-.bolt/
-*.pyc
-__pycache__/
+*.pem
+
+# local env files
+.env*.local
+.env
+
+# typescript
+*.tsbuildinfo
