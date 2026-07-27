@@ -6,6 +6,7 @@ import { StatusBar } from "expo-status-bar";
 import * as SplashScreen from "expo-splash-screen";
 
 import { useIconFonts } from "@/src/hooks/use-icon-fonts";
+import { useFrameworkReady } from "@/hooks/useFrameworkReady";
 import {
   AppContext, AppUser, CartLine, loadCart, loadToken, saveCart, clearToken,
   loadRecentlyViewed, saveRecentlyViewed,
@@ -17,6 +18,7 @@ SplashScreen.preventAutoHideAsync().catch(() => {});
 const BOOT_TIMEOUT = 6000;
 
 export default function RootLayout() {
+  useFrameworkReady();
   const [loaded, error] = useIconFonts();
   const [bootDone, setBootDone] = useState(false);
   const [user, setUser] = useState<AppUser | null>(null);

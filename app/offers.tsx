@@ -25,10 +25,9 @@ export default function Offers() {
         ) : (
           coupons.map((c) => (
             <View key={c.code} style={styles.card} testID={`offer-${c.code}`}>
-              <View style={styles.badge}><Text style={styles.pct}>{c.discount_percent}%</Text><Text style={styles.off}>OFF</Text></View>
+              <View style={styles.badge}><Text style={styles.pct}>{c.discount_type === "percent" ? `${c.discount_value}%` : `₹${c.discount_value}`}</Text><Text style={styles.off}>OFF</Text></View>
               <View style={{ flex: 1, marginLeft: SPACING.md }}>
-                <Text style={styles.code}>{c.code}</Text><Text style={styles.desc}>{c.description}</Text><Text style={styles.min}>Min order ₹{c.min_order}</Text>
-                {c.first_order_only ? (<View style={styles.firstTag}><Ionicons name="ribbon" size={11} color={COLORS.gold} /><Text style={styles.firstTagTxt}>First order only</Text></View>) : null}
+                <Text style={styles.code}>{c.code}</Text><Text style={styles.min}>Min order ₹{c.min_order}</Text>
               </View>
             </View>
           ))
