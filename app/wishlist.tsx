@@ -42,7 +42,7 @@ export default function Wishlist() {
               <Pressable testID={`wl-item-${item.id}`} onPress={() => { pushRecentlyViewed(item.id); router.push(`/product/${item.id}`); }} style={styles.card}>
                 <Image source={item.image} style={styles.img} contentFit="cover" transition={250} />
                 <View style={{ flex: 1, marginLeft: SPACING.md }}>
-                  <View style={styles.vegRow}><VegBadge veg={item.veg} /><Text style={styles.cat}>{item.category}</Text></View>
+                  <View style={styles.vegRow}><VegBadge veg={item.is_veg} /><Text style={styles.cat}>{item.category}</Text></View>
                   <Text style={styles.name}>{item.name}</Text>
                   <View style={styles.metaRow}><RatingPill rating={item.rating || 4.5} /><Text style={styles.price}>₹{item.price}</Text></View>
                 </View>

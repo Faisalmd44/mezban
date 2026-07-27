@@ -87,7 +87,7 @@ export default function Tracking() {
 
         <View style={styles.detailsCard}>
           <Text style={styles.section}>Order Summary</Text>
-          {order.items.map((it: any, i: number) => (
+          {order.order_items.map((it: any, i: number) => (
             <View key={i} style={styles.itemRow}>
               <Text style={styles.itemQty}>{it.quantity}x</Text>
               <Text style={styles.itemName}>{it.name}{it.variant ? ` (${it.variant})` : ""}</Text>

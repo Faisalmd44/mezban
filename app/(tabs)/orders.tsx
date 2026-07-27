@@ -17,7 +17,7 @@ type Order = {
   payment_method: string;
   payment_status: string;
   created_at: string;
-  items: {
+  order_items: {
     name: string;
     quantity: number;
     price: number;
@@ -68,7 +68,7 @@ export default function OrdersTab() {
                   <Text style={[styles.statusText, { color: STATUS_COLORS[item.status] || COLORS.textMuted }]}>{item.status}</Text>
                 </View>
               </View>
-                <Text numberOfLines={2} style={styles.itemsSummary}>{(item.items || []).map((i: any) => `${i.quantity}x ${i.name}`).join(", ")}</Text>
+                <Text numberOfLines={2} style={styles.itemsSummary}>{(item.order_items || []).map((i: any) => `${i.quantity}x ${i.name}`).join(", ")}</Text>
               <View style={styles.cardFoot}>
                 <Text style={styles.total}>₹{item.total}</Text>
                 <Text style={styles.date}>{new Date(item.created_at).toLocaleDateString()}</Text>
